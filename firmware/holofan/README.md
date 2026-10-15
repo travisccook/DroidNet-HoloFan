@@ -68,6 +68,9 @@ ota_1, so prefer an OTA.
 
 ## Clips over Wi-Fi (maintenance mode)
 
+Users load clips with DroidNet Signal Booster (README.md, "Clips"); these
+calls are for development:
+
     curl http://holofan.local/api/clips
     python3 tools/bench/clip_put.py 03-Rings.bin http://holofan.local 03-Rings.bin
     curl -X DELETE http://holofan.local/api/clips/03-Rings.bin

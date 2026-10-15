@@ -1,7 +1,9 @@
 # Tools
 
 Helpers for making clips, uploading them, and testing the HoloFan on a bench.
-None of them is needed to build or flash the firmware.
+None of them is needed to build or flash the firmware. To make and load
+clips day to day, use DroidNet Signal Booster (README.md, "Clips"); these
+tools are for development and bench tests.
 
 ## How the bench tools reach the mesh
 

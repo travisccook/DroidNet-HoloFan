@@ -8,6 +8,11 @@ next, previous, clip by number, volume, brightness, loop, Bluetooth off. In
 maintenance mode the fan joins your Wi-Fi for clip uploads and over-the-air
 updates, and a bad update rolls itself back.
 
+It is made to be used with [DroidNet Signal Booster](https://github.com/travisccook/DroidNetSignalBooster-releases),
+which loads the clips: its HoloFan tab turns your videos into clips for the
+fan, keeps your clip library, puts the clips you choose on the fan's card
+over Wi-Fi, and gives each one the command that plays it ("Clips", below).
+
 The fan's LED and SD-card controller keeps its own firmware; only the radio
 chip's software is replaced, and your backup of the stock firmware puts it
 back.
@@ -91,6 +96,8 @@ WCB mesh. If you try one of these, you are the first.
   fan's holes without them crossing ("Making contact", below).
 - A 330 ohm resistor.
 - ESP-IDF at commit 11edebdbbe ("Building", below) and Python 3.
+- [DroidNet Signal Booster](https://github.com/travisccook/DroidNetSignalBooster-releases) on your droid, to make
+  and load clips.
 
 ---
 
@@ -281,6 +288,32 @@ booting it appears on your WCBs as HoloFan.
 
 ---
 
+## Clips
+
+Load clips with [DroidNet Signal Booster](https://github.com/travisccook/DroidNetSignalBooster-releases):
+
+1. In its Config, Optional Features, switch HoloFan on, on the Booster whose
+   WCB reaches the fan over the mesh (on a C2-B5 style droid, the dome
+   Booster).
+2. In the HoloFan setup card that appears below the switch, pick the WCB
+   that reaches the fan; with only one WCB that has an always-on listener,
+   it is picked for you. Leave the mesh name HoloFan and node id 16 unless
+   you changed them on the fan.
+3. In the HoloFan tab, import videos, which it turns into clips for the
+   Atom PRO, or make new clips in its Create studio.
+4. Choose the clips you want on the fan and Sync. The fan must have power
+   (the HoloLifter's relay on: `;wHoloLifter,#HLF1`). During the Sync the
+   Booster takes the fan off the mesh, uploads the clips over Wi-Fi and
+   brings it back.
+5. Copy each clip's play command, `;wHoloFan,#HLFT<NN>` (by slot), into a
+   WCB stored command or your controller's buttons.
+
+Clips for the Atom PRO are 64 LEDs x 520 lines x 6 bits; other geometries
+play as snow. For development and bench tests, tools/holofan_clip/clipgen.py
+makes clips and tools/bench/clip_put.py uploads one (tools/README.md).
+
+---
+
 ## Day to day
 
 Send commands through any WCB as `;wHoloFan,<command>` or `;w16,<command>`.
@@ -336,20 +369,11 @@ The full reference, with the bench and diagnostic commands, is
 The fan's power is not a fan command: switch it with a relay (the HoloLifter
 does this with `#HLF1` / `#HLF0`) or your own switch.
 
-**Clips** for the Atom PRO are 64 LEDs x 520 lines x 6 bits.
-tools/holofan_clip/clipgen.py makes them; other geometries play as snow.
-
-[DroidNet Signal Booster](https://github.com/travisccook/DroidNetSignalBooster-releases)
-does the clip work without a command line. Its HoloFan tab turns videos
-into clips for the Atom PRO, makes new ones in its Create studio, keeps the
-library of your clips, puts the ones you pick on the fan's card over Wi-Fi
-with one Sync, and gives each clip the command that plays it.
-
-**Maintenance mode** (uploads and updates): send `#HLZX1` (Wi-Fi profile 1),
-or power-cycle the fan three times in a row, each time on for 2 to 10 s. The
+**Maintenance mode** (Signal Booster's Sync uses it for clips; you need it
+yourself for firmware updates): send `#HLZX1` (Wi-Fi profile 1), or
+power-cycle the fan three times in a row, each time on for 2 to 10 s. The
 fan leaves the mesh, joins your Wi-Fi and answers at http://holofan.local:
 
-    python3 tools/bench/clip_put.py 03-Rings.bin http://holofan.local 03-Rings.bin
     curl -X POST -H 'Content-Type: application/octet-stream' \
          --data-binary @firmware/holofan/build/holofan.bin http://holofan.local/api/ota
 
