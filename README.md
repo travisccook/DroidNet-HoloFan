@@ -301,8 +301,6 @@ Playback:
 Sound and picture:
 
     #HLFV<1-3>      volume (the fan starts at 3 after every power-up)
-    #HLFM / #HLFU   mute / unmute. There is no volume 0: mute sets volume 1,
-                    the lowest, and unmute puts the volume back
     #HLFB<1-3>      brightness
     #HLFW<1|0>      panel switcher on / off
     #HLFA<0|1>      Bluetooth off / on (saved; off by default)

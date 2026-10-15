@@ -66,10 +66,6 @@ Playback (silent):
     #HLFB<1-3>      brightness
     #HLFV<1-3>      volume. The MCU comes up at volume 3 after every power
                     cycle
-    #HLFM / #HLFU   mute / unmute. The MCU's lowest volume is 1 (there is no
-                    0), so mute sets volume 1; unmute restores the volume from
-                    before the mute. Not muted: unmute does nothing, except at
-                    volume 1 it sets volume 3
     #HLFL<O|A>      loop one / all
     #HLFW<1|0>      panel switcher on / off
     #HLFC           re-read the clip list from the SD card
