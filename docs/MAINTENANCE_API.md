@@ -161,6 +161,10 @@ There is no idle timeout.
            erases the SD card (every clip). 200 {"ok":true,"clips":[]};
            400 {"ok":false,"err":"confirm"} without the exact token
     DELETE /api/clips/<name>
+           takes about 5-9 s: the fan lists the card, sends the delete,
+           waits 3 s (the MCU never confirms it) and lists again. Give
+           it a 30 s timeout, and after a timeout list the clips
+           (GET /api/clips) before trying again.
            200 {"ok":true}
            400 {"ok":false,"err":"name"}
            404 {"ok":false,"err":"notfound"}
