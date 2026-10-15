@@ -24,6 +24,9 @@ power.
 None of this would exist without people who took these fans apart first and
 wrote down what they found.
 
+- **Todd Word and Michael Bean: the BeanLifter.** They broke ground with the
+  BeanLifter and took the holofan in a droid from a good idea to a working
+  build.
 - **David Smith (daveismith): beancell-holo**
   <https://github.com/daveismith/beancell-holo>. His documentation of the 5D
   fans' access point and their HTTP and WebSocket control protocol
