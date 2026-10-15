@@ -77,10 +77,6 @@ bool parseCommand(const char* line, Cmd& out) {
       out = {CmdType::TX_POWER, n};
       return true;
     }
-    case 'H':                                         // #HLFH<2|3>: the highest volume allowed
-      if ((rest[0] != '2' && rest[0] != '3') || rest[1] != '\0') return false;
-      out = {CmdType::VOLUME_CAP, rest[0] - '0'};
-      return true;
     case 'B': { int n = atoi(rest); if (n < 1 || n > 3) return false; out = {CmdType::BRIGHTNESS, n}; return true; }
     case 'V': { int n = atoi(rest); if (n < 1 || n > 3) return false; out = {CmdType::VOLUME, n}; return true; }
     case 'L':

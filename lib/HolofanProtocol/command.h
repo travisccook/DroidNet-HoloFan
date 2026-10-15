@@ -15,8 +15,7 @@ enum class CmdType {
   TX_PROBE,         // #HLFJ<lo><hi><dBm>: bench: dip per probe frame at levels lo..hi, TX power dBm; param lo*10000+hi*1000+dBm
   HEARTBEAT,        // #HLFK<ss>: bench: mesh heartbeat period ss seconds (2-25), 0 = default
   BLUETOOTH,        // #HLFA<0|1>: the MCU's Bluetooth off (default since 0.9.9) / on; saved
-  TX_POWER,         // #HLFO<dd>: mesh TX power dd dBm (2-20), 0 = default (20); saved (0.9.10)
-  VOLUME_CAP        // #HLFH<2|3>: the highest volume the fan sets or leaves alone; saved (0.9.11)
+  TX_POWER          // #HLFO<dd>: mesh TX power dd dBm (2-20), 0 = default (8); saved (0.9.10)
 };
 
 struct Cmd {

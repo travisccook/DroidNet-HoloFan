@@ -194,12 +194,11 @@ void test_raw_mesh_allowlist() {
   TEST_ASSERT_FALSE(rawMeshAllowed("tt"));
 }
 
-// The whole #HLFX line: the volume command only with a level within the cap,
-// so the mesh cannot set volume 3 through the raw path either.
-void test_raw_mesh_line_volume_capped() {
+// The whole #HLFX line: the volume command only with a level the MCU knows, 1-3.
+void test_raw_mesh_line_volume_levels() {
   TEST_ASSERT_TRUE(rawMeshLineAllowed("m 1"));
   TEST_ASSERT_TRUE(rawMeshLineAllowed("m 2"));
-  TEST_ASSERT_FALSE(rawMeshLineAllowed("m 3"));
+  TEST_ASSERT_TRUE(rawMeshLineAllowed("m 3"));
   TEST_ASSERT_FALSE(rawMeshLineAllowed("m 9"));
   TEST_ASSERT_FALSE(rawMeshLineAllowed("m 0"));
   TEST_ASSERT_FALSE(rawMeshLineAllowed("m"));
@@ -355,7 +354,7 @@ int main(int, char**) {
   RUN_TEST(test_mcu_log_drops_replies_and_noise);
   RUN_TEST(test_mcu_log_sanitized_and_cut);
   RUN_TEST(test_mcu_log_queue_keeps_oldest_and_counts_drops);
-  RUN_TEST(test_raw_mesh_line_volume_capped);
+  RUN_TEST(test_raw_mesh_line_volume_levels);
   RUN_TEST(test_raw_mesh_line_other_commands);
   RUN_TEST(test_build_plain_and_with_args);
   RUN_TEST(test_build_command_with_digits);

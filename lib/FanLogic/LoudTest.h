@@ -1,4 +1,4 @@
-// #HLFY<r><seconds> (bench, 0.9.4): volume 3 past the cap for 10-300 s with
+// #HLFY<r><seconds> (bench, 0.9.4): volume 3 for 10-300 s with
 // the ESP's radio on (r=1), fully off (r=0) or receiving only (r=2: off the
 // mesh, Wi-Fi started; 0.9.6), then back to the old volume. A brownout with
 // the radio off means the rest of the fan (amplifier, LEDs, MCU) pulls the
@@ -65,10 +65,9 @@ class LoudTest {
  public:
   enum class Action { NONE, VOLUME_UP, RADIO_OFF, VOLUME_RESTORE, RADIO_ON, REPORT };
   // param = r * 1000 + seconds (CmdType::LOUD_TEST); volume = the MCU's
-  // volume now (restored afterwards; outside 1..cap: cap, the volume cap,
-  // 3 or VOLUME_MAX).
+  // volume now (restored afterwards; not known: VOLUME_MAX).
   // False if a test is running or param is out of range.
-  bool start(int param, int volume, uint32_t now, int cap = VOLUME_MAX);
+  bool start(int param, int volume, uint32_t now);
   // The next action due at `now`, at most one per call:
   //   VOLUME_UP       set volume 3 and read it back (answer with volumeResult)
   //   RADIO_OFF       r=0, after 3 was read back: leave the mesh, radio off

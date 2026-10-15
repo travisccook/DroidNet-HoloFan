@@ -19,10 +19,6 @@ void saveBluetooth(bool on);
 // (the default; fanlogic::txPowerDbm turns it into the power to use).
 uint8_t loadTxPower();
 void saveTxPower(uint8_t dbm);
-// 0.9.11: the volume cap (#HLFH, key "vcap"): 0 when never saved (the
-// default; FanController::setVolumeCap takes anything but 3 as 2).
-uint8_t loadVolumeCap();
-void saveVolumeCap(uint8_t cap);
 }
 
 #endif

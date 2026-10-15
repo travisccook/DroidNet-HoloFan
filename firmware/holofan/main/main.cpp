@@ -20,6 +20,5 @@ extern "C" void app_main(void) {
   // (docs/HOW_IT_WORKS.md). If it will not mount we run on defaults.
   esp_err_t err = nvs_flash_init();
   if (err != ESP_OK) con("[nvs] init failed (%s): running on defaults, NOT erasing", esp_err_to_name(err));
-  fanMcuSetVolumeCap(configstore::loadVolumeCap());   // the MCU task waits for it before its handshake
   fanMeshStart();
 }

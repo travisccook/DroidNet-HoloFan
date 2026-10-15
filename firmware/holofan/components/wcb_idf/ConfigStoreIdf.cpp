@@ -112,22 +112,6 @@ void saveTxPower(uint8_t dbm) {
   nvs_close(h);
 }
 
-uint8_t loadVolumeCap() {
-  nvs_handle_t h;
-  if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) return 0;
-  uint8_t cap = getU8(h, "vcap", 0);
-  nvs_close(h);
-  return cap;
-}
-
-void saveVolumeCap(uint8_t cap) {
-  nvs_handle_t h;
-  if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return;
-  nvs_set_u8(h, "vcap", cap);
-  nvs_commit(h);
-  nvs_close(h);
-}
-
 void savePowerCycles(uint8_t n) {
   nvs_handle_t h;
   if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return;

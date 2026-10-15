@@ -244,25 +244,16 @@ void test_record_seal_and_format() {
   TEST_ASSERT_FALSE(loudRecordValid(r));
 }
 
-void test_restore_volume_defaults_to_the_cap() {
+// The hold goes back to the volume it found; unknown: the top volume, 3.
+void test_restore_volume_is_the_one_found() {
   LoudTest t;
   TEST_ASSERT_TRUE(t.start(1010, 0, 0));               // volume unknown
   TEST_ASSERT_EQUAL(VOLUME_MAX, t.restoreVolume());
   LoudTest u;
-  TEST_ASSERT_TRUE(u.start(1010, 3, 0));               // never restore past the cap
-  TEST_ASSERT_EQUAL(VOLUME_MAX, u.restoreVolume());
-}
-
-// 0.9.11: with the cap at 3 (#HLFH3) the hold goes back to the 3 it found.
-void test_restore_volume_follows_the_cap() {
-  LoudTest t;
-  TEST_ASSERT_TRUE(t.start(1010, 3, 0, 3));
-  TEST_ASSERT_EQUAL(3, t.restoreVolume());
-  LoudTest u;
-  TEST_ASSERT_TRUE(u.start(1010, 0, 0, 3));             // volume unknown: the cap
+  TEST_ASSERT_TRUE(u.start(1010, 3, 0));
   TEST_ASSERT_EQUAL(3, u.restoreVolume());
   LoudTest v;
-  TEST_ASSERT_TRUE(v.start(1010, 2, 0, 3));
+  TEST_ASSERT_TRUE(v.start(1010, 2, 0));
   TEST_ASSERT_EQUAL(2, v.restoreVolume());
 }
 
@@ -343,8 +334,7 @@ int main(int, char**) {
   RUN_TEST(test_restore_is_resent_until_it_reads_back);
   RUN_TEST(test_radio_comes_back_when_the_restore_fails);
   RUN_TEST(test_silent_restore_still_brings_the_radio_back);
-  RUN_TEST(test_restore_volume_defaults_to_the_cap);
-  RUN_TEST(test_restore_volume_follows_the_cap);
+  RUN_TEST(test_restore_volume_is_the_one_found);
   RUN_TEST(test_refuses_bad_param_and_a_second_start);
   RUN_TEST(test_wraps_with_the_millisecond_clock);
   RUN_TEST(test_retry_repeats_the_restore);

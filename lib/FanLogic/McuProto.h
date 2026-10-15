@@ -21,11 +21,8 @@ constexpr size_t MCU_LINE_MAX = 96;
 //   - it does not fit out (or MCU_LINE_MAX).
 int buildLine(const char* cmd, const char* const* args, int argc, char* out, size_t outSize);
 
-// Highest volume the fan firmware sends ("m <v>"). Bench 2026-10-07: at
-// volume 3 the fan's audio pulls its 3.3 V rail under the ESP's brownout
-// level within seconds and cuts the audio until a power cycle; volume 2 ran
-// clean.
-constexpr int VOLUME_MAX = 2;
+// The MCU's volumes are 1 to 3 ("m <v>"; there is no 0). It powers up at 3.
+constexpr int VOLUME_MAX = 3;
 
 // Raw MCU lines that may be sent from the mesh debug command (#HLFX): only
 // commands that cannot change or erase the SD card (never v, u, w, y).

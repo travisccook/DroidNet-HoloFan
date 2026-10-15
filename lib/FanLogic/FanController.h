@@ -56,9 +56,8 @@ constexpr uint32_t POLL_MS = 3000;              // idle poll cadence
 constexpr uint32_t QUICK_POLL_MS = 300;         // refresh soon after a playback command
 constexpr uint32_t NOMCU_RETRY_MS = 10000;      // NOMCU: one get_setting try this often
 constexpr int      POLL_MISSES_NOMCU = 5;       // READY -> NOMCU after this many silent polls
-// READY: get_setting this often (0.9.8: always, not only while the volume is
-// unknown), so a volume 3 set behind our back is capped within this time and
-// changes nobody commanded are reported (takeUnprompted).
+// READY: get_setting this often (0.9.8), so changes nobody commanded are
+// reported (takeUnprompted) within this time.
 constexpr uint32_t SETTINGS_POLL_MS = 30000;
 constexpr uint32_t SETTINGS_RETRY_MS = SETTINGS_POLL_MS;
 constexpr uint32_t EXPECT_CLIP_MS = 5000;       // a clip change we asked for may show up this late
@@ -92,12 +91,12 @@ class FanController {
   // every NOMCU_RETRY_MS and come back READY if it answers.
   void poll(uint32_t now);
 
-  // Bench (#HLFY): set volume v (1-3, past the cap) and read it back (up
-  // to VOLUME_READS get_setting: the MCU is often busy right after "m"),
-  // sending "m" once more only if it reports another volume. Returns
-  // the volume the MCU reports afterwards, or 0: no read-back (the volume
-  // is then unknown, so poll() reads it again and caps a 3), NOMCU (a v up
-  // to VOLUME_MAX is still sent, unread; 3 never), or v out of range.
+  // Set volume v (1-3) and read it back (up to VOLUME_READS get_setting:
+  // the MCU is often busy right after "m"), sending "m" once more only if
+  // it reports another volume (#HLFY, maintenance). Returns the volume the
+  // MCU reports afterwards, or 0: no read-back (the volume is then
+  // unknown, so poll() reads it again), NOMCU (v is still sent, unread),
+  // or v out of range.
   int setVolumeChecked(int v);
 
   // The UART to the MCU never came up: NOMCU with err=nouart (call instead of begin()).
@@ -111,14 +110,6 @@ class FanController {
   // once and left alone until the next wantBluetooth(). Not called: the
   // setting is left as it is. CmdType::BLUETOOTH sets it too.
   void wantBluetooth(bool on) { bleWant_ = on ? 1 : 0; bleStuck_ = false; }
-
-  // 0.9.11 (#HLFH, saved by the firmware): the highest volume this class
-  // sets or leaves alone, 3 or VOLUME_MAX (anything else). Sends nothing:
-  // give the saved cap before begin(), so the MCU's own volume 3 is not
-  // lowered at connect. CmdType::VOLUME_CAP sets it too and lowers a higher
-  // volume at once; raising the cap never raises the volume.
-  void setVolumeCap(int cap);
-  int volumeCap() const { return cap_; }
 
   // 0.9.8: a raw line went to the MCU behind this class (#HLFX, console):
   // the next settings read sets a new baseline instead of reporting.
@@ -134,7 +125,7 @@ class FanController {
   // holds the link, so this class is not running meanwhile). `changed`: the
   // lease touched the MCU (upload, delete, format; not a list, EXISTS or an
   // SPI failure). At the first settings read after such a lease, what the
-  // MCU changed since beginLease() is put back: volume (up to the cap), loop
+  // MCU changed since beginLease() is put back: volume, loop
   // mode (if it was known), brightness, then the clip: in loop all a playing
   // fan is left alone unless the MCU changed its loop mode; otherwise the
   // clip that was playing is started again, or shown paused, if a fresh
@@ -148,13 +139,13 @@ class FanController {
   bool takeLeaseReport(char* out, size_t size);
   uint32_t leaseChanges() const { return leaseChanges_; }
   // Changes nobody here commanded, seen by the periodic settings read or (in
-  // loop one) by a clip change: "vol 2->3 (capped)", "loop one->all",
+  // loop one) by a clip change: "vol 2->3", "loop one->all",
   // "clip A->B". One pending text (later events append); false if none.
   bool takeUnprompted(char* out, size_t size);
   uint32_t unprompted() const { return unpromptedCount_; }
-  // What the MCU reported at the first connect, before the cap changed it:
-  // "[fan] MCU at connect: ble on, loop all, br 2, vol 3 (capped to 2),
-  // angle 164; playing <name> <progress>/<total>". bootDone() once known.
+  // What the MCU reported at the first connect: "[fan] MCU at connect: ble
+  // on, loop all, br 2, vol 3, angle 164; playing <name> <progress>/<total>".
+  // bootDone() once known.
   bool bootDone() const { return bootDone_; }
   // The settings were first read after the connect (READY through PlayInfo
   // alone): the boot record has them now. True once per such read.
@@ -188,7 +179,6 @@ class FanController {
   void setErr(const char* e);
   void updateIndex();
   void becomeReady(uint32_t now);
-  void capVolume();
   static bool due(uint32_t now, uint32_t at) { return (int32_t)(now - at) >= 0; }
 
   McuLink&         link_;
@@ -198,11 +188,9 @@ class FanController {
   bool     answered_ = false;
   bool     muted_ = false;
   int      preMuteVolume_ = VOLUME_MAX;
-  int      cap_ = VOLUME_MAX;          // setVolumeCap()
   uint32_t now_ = 0;                   // the latest time given to begin/poll/execute
   Settings base_;                      // the MCU's settings as last read or commanded
   bool     baseValid_ = false;
-  bool     loudAllowed_ = false;       // setVolumeChecked(3) (#HLFY): the periodic read leaves the 3
   bool     clipKnown_ = false;         // playing_ is a baseline for loop-one clip changes
   bool     expectClip_ = false;        // we asked for a clip change (t/e/f) ...
   uint32_t expectClipUntil_ = 0;       // ... that may show up until then
@@ -236,7 +224,6 @@ class FanController {
   uint32_t leaseChanges_ = 0;
   bool     bootSettingsKnown_ = false;
   Settings bootSettings_;
-  int      bootCapTo_ = 0;             // the volume after the boot cap, when it capped
   bool     bootPlayKnown_ = false;
   char     bootClip_[holofan::CLIP_NAME_MAX + 1] = {0};
   int      bootProgress_ = 0, bootTotal_ = 0;

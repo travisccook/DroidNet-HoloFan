@@ -42,7 +42,7 @@ int loudRecordFormat(const LoudRecord& r, int resetReason, char* out, size_t siz
   return (n < 0 || (size_t)n >= size) ? -1 : n;
 }
 
-bool LoudTest::start(int param, int volume, uint32_t now, int cap) {
+bool LoudTest::start(int param, int volume, uint32_t now) {
   if (active() || param < 0) return false;
   int r = param / 1000, s = param % 1000;
   if (r > 2 || s < LOUD_MIN_S || s > LOUD_MAX_S) return false;
@@ -57,8 +57,7 @@ bool LoudTest::start(int param, int volume, uint32_t now, int cap) {
   tries_ = 0;
   upRead_ = restoreRead_ = 0;
   seconds_ = s;
-  if (cap != 3) cap = VOLUME_MAX;
-  restore_ = volume >= 1 && volume <= cap ? volume : cap;
+  restore_ = volume >= 1 && volume <= VOLUME_MAX ? volume : VOLUME_MAX;
   last_ = Step::IDLE;
   start_ = now;
   if (radioOff_) go(Step::RADIO_OFF, now + LOUD_RADIO_OFF_MS);   // off the mesh before the step

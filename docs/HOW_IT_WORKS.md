@@ -95,8 +95,9 @@ MCU has been quiet for 300 ms (at most 3 s) after every action, which is why
 the mesh commands are queued and paced.
 
 At every power-up the MCU starts at volume 3, Bluetooth on, loop all, and a
-clip upload resets it to the same state; the firmware puts its own settings
-back afterwards (volume cap, saved Bluetooth choice).
+clip upload resets it to the same state; after an upload the firmware puts
+back the volume, loop mode and brightness it had, and switches Bluetooth to
+the saved choice.
 
 ## 4. Clip upload over SPI
 
@@ -175,23 +176,14 @@ image boots in the bootloader's pending-verify state and keeps itself only
 if it reaches the mesh within 30 s; otherwise the bootloader goes back to the
 previous image on its own (tested).
 
-## 7. Volume 3 and transmit power
+## 7. Transmit power
 
-At volume 3 the fan's shared supply sags with the audio, and the ESP's own
-radio bursts at 20 dBm can push it into a brownout reset and ~10 s audio
-silences (bench, October 2026). Only the ESP resets: the MCU keeps playing,
-and the mesh link is gone for a few seconds.
+The ESP's radio shares the fan's supply with the audio. The firmware
+transmits on the mesh at 8 dBm by default: on our fan, 20 dBm bursts at
+volume 3 caused brownout resets of the ESP, and at 8 dBm normal clips played
+clean. `#HLFO<dd>` changes it (02-20 dBm, saved). Maintenance mode (Wi-Fi)
+always transmits at 20 dBm, so the fan plays at volume 1 while in maintenance
+and restores the volume afterwards.
 
-So the firmware:
-
-- caps the volume at 2 by default. `#HLFH3` raises the cap to 3, at your own
-  risk; `#HLFH2` puts it back.
-- has a saved mesh transmit power, `#HLFO<dd>` (02-20 dBm, default 20). On
-  our fan, at 8 dBm, volume 3 ran clean on normal clips, while one bench clip
-  (a steady tone) still caused resets at 8 and at 2 dBm.
-- plays at volume 1 while in maintenance mode (Wi-Fi always transmits at full
-  power) and restores the volume afterwards.
-
-The bench instruments behind these findings are in docs/SERIAL_COMMANDS.md:
-`#HLFQ` (rst=9 means the last restart was a brownout), `#HLFE` (supply sag
-meter) and `#HLFJ` (transmit dip probe).
+`#HLFQ` reports the last reset reason (rst=9 is a brownout);
+docs/SERIAL_COMMANDS.md has the bench instruments.

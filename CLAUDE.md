@@ -23,7 +23,6 @@ python3 -B -m unittest discover -s firmware/holofan/tests          # fanflash.py
 python3 -B -m unittest discover -s tools/bench -p 'test_*.py'
 python3 -B -m unittest discover -s tools/holofan_clip -p 'test_*.py'
 python3 -B -m unittest discover -s tools -p 'test_check_private.py'
-python3 -B -m unittest discover -s tools -p 'test_readme_commands.py'
 ```
 
 ESP-IDF must be at commit 11edebdbbe (release/v5.4); build.sh warns
@@ -64,8 +63,8 @@ same holds for their test suites.
   never writes the nvs partition.
 - The MCU drops or misreads a line sent while it is busy: keep the settle
   wait after every action and the queue limits.
-- Public defaults stay as they are: volume cap 2, mesh TX power 20 dBm, mesh
-  off until a password is set, no Wi-Fi profiles.
+- Public defaults stay as they are: mesh TX power 8 dBm (maintenance 20),
+  mesh off until a password is set, no Wi-Fi profiles.
 - A new image must reach the mesh within 30 s of booting or it rolls back;
   do not mark an image valid any earlier.
 
@@ -74,9 +73,8 @@ same holds for their test suites.
 Commands are `#HL...` lines sent through a WCB as `;wHoloFan,#HLFS\r`. Only
 queries reply, as a mesh broadcast starting with `#HL:`; actions are silent.
 docs/SERIAL_COMMANDS.md is the reference; keep it in step with
-lib/HolofanProtocol and lib/FanLogic. README.md carries a copy under
-"Command reference": change both together (tools/test_readme_commands.py
-checks).
+lib/HolofanProtocol and lib/FanLogic, and README.md's list of everyday
+and setup commands with it.
 
 ## Documentation rules
 

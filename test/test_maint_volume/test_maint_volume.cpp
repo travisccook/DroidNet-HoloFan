@@ -37,14 +37,14 @@ void test_enter_at_1_changes_nothing() {
 }
 
 // The MCU has not answered yet (maintenance from three short power-ons): set
-// 1 anyway, and go back to the cap afterwards.
-void test_unknown_volume_goes_back_to_the_cap() {
+// 1 anyway; afterwards an unmute puts the top volume back.
+void test_unknown_volume_goes_back_by_unmute() {
   MaintVolumeRecord r = garbage();
   TEST_ASSERT_EQUAL(MAINT_VOLUME, maintVolumeEnter(r, 0));
-  TEST_ASSERT_EQUAL(MAINT_RESTORE_CAP, maintVolumeLeave(r));
+  TEST_ASSERT_EQUAL(MAINT_RESTORE_UNKNOWN, maintVolumeLeave(r));
   MaintVolumeRecord s = garbage();
   TEST_ASSERT_EQUAL(MAINT_VOLUME, maintVolumeEnter(s, 7));   // out of range is unknown too
-  TEST_ASSERT_EQUAL(MAINT_RESTORE_CAP, maintVolumeLeave(s));
+  TEST_ASSERT_EQUAL(MAINT_RESTORE_UNKNOWN, maintVolumeLeave(s));
 }
 
 void test_leave_without_a_record_does_nothing() {
@@ -88,7 +88,7 @@ int main(int, char**) {
   RUN_TEST(test_enter_at_3_sets_1_and_leave_puts_3_back);
   RUN_TEST(test_enter_at_2_puts_2_back);
   RUN_TEST(test_enter_at_1_changes_nothing);
-  RUN_TEST(test_unknown_volume_goes_back_to_the_cap);
+  RUN_TEST(test_unknown_volume_goes_back_by_unmute);
   RUN_TEST(test_leave_without_a_record_does_nothing);
   RUN_TEST(test_reentry_keeps_the_first_volume);
   RUN_TEST(test_record_survives_a_copy_and_detects_damage);

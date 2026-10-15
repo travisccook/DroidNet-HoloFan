@@ -25,7 +25,7 @@ void test_status()     { expect("#HLFS", CmdType::STATUS, 0); expect("#HLFD", Cm
 void test_diag_query() { Cmd c; TEST_ASSERT_TRUE(parseCommand("#HLFQ", c)); TEST_ASSERT_EQUAL((int)CmdType::DIAG, (int)c.type); }
 void test_bad_level_fails()    { Cmd c; TEST_ASSERT_FALSE(parseCommand("#HLFB9", c)); TEST_ASSERT_FALSE(parseCommand("#HLFV0", c)); }
 void test_bad_index_fails()    { Cmd c; TEST_ASSERT_FALSE(parseCommand("#HLFG0", c)); }
-// #HLFY<r><seconds> (bench, 0.9.4): volume 3 past the cap for 10-300 s with the
+// #HLFY<r><seconds> (bench, 0.9.4): volume 3 for 10-300 s with the
 // radio on (r=1) or off (r=0); param = r * 1000 + seconds.
 void test_loud_test() {
   expect("#HLFY060", CmdType::LOUD_TEST, 60);
@@ -125,20 +125,11 @@ void test_bad_tx_power_fails() {
   TEST_ASSERT_FALSE(parseCommand("#HLFO-8", c));
   TEST_ASSERT_FALSE(parseCommand("#HLFO1x", c));
 }
-// #HLFH<2|3>: the highest volume the fan allows (0.9.11; saved).
-void test_volume_cap() {
-  expect("#HLFH2", CmdType::VOLUME_CAP, 2);
-  expect("#HLFH3", CmdType::VOLUME_CAP, 3);
-}
-void test_bad_volume_cap_fails() {
+// There is no volume cap any more: #HLFH is not a command.
+void test_volume_cap_command_is_gone() {
   Cmd c;
-  TEST_ASSERT_FALSE(parseCommand("#HLFH", c));
-  TEST_ASSERT_FALSE(parseCommand("#HLFH0", c));
-  TEST_ASSERT_FALSE(parseCommand("#HLFH1", c));        // 1 is a volume, not a cap worth saving
-  TEST_ASSERT_FALSE(parseCommand("#HLFH4", c));
-  TEST_ASSERT_FALSE(parseCommand("#HLFH23", c));
-  TEST_ASSERT_FALSE(parseCommand("#HLFH3x", c));
-  TEST_ASSERT_FALSE(parseCommand("#HLFHx", c));
+  TEST_ASSERT_FALSE(parseCommand("#HLFH2", c));
+  TEST_ASSERT_FALSE(parseCommand("#HLFH3", c));
 }
 // #HLFT<NN>: play the clip whose name starts with NN- or NN_ (one or two digits, 0-99).
 void test_play_slot() {
@@ -183,8 +174,7 @@ int main(int, char**) {
   RUN_TEST(test_bad_heartbeat_knob_fails);
   RUN_TEST(test_tx_power);
   RUN_TEST(test_bad_tx_power_fails);
-  RUN_TEST(test_volume_cap);
-  RUN_TEST(test_bad_volume_cap_fails);
+  RUN_TEST(test_volume_cap_command_is_gone);
   RUN_TEST(test_bad_slot_fails);
   RUN_TEST(test_bad_loop_fails);
   RUN_TEST(test_wrong_prefix_fails);

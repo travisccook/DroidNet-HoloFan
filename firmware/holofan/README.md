@@ -93,5 +93,5 @@ erases NVS.
 - Arguments with NUL, CR, LF, space, control or non-ASCII bytes are refused,
   so a name can never split the `cmd args\n` framing.
 - GPIO8 and GPIO9 (boot straps) are never configured.
-- The volume cap defaults to 2 and the mesh TX power to 20 dBm
-  (docs/HOW_IT_WORKS.md, section 7).
+- The mesh TX power defaults to 8 dBm (#HLFO; docs/HOW_IT_WORKS.md,
+  section 7); maintenance mode always uses 20 dBm.

@@ -21,12 +21,11 @@ third boot enters maintenance on profile 1 (profile 2 if 1 is unset). Only
 power-on resets count, so brown-outs and software reboots never trigger it.
 The fan's UART0 console also takes "mesh maint <p>".
 
-HoloFan 0.9.12: the fan plays at volume 1 while it is in maintenance. The
-Wi-Fi link transmits at full power, and at volume 3 those bursts brown the
-fan's ESP out (bench 2026-10-13). The volume it had comes back 5 s after the
+HoloFan 0.9.12: the fan plays at volume 1 while it is in maintenance, where
+Wi-Fi transmits at full power. The volume it had comes back 5 s after the
 fan is on the mesh again, and 8 s after the boot when maintenance ended in
 the reboot of an OTA. A power cycle in maintenance leaves the fan at its
-power-up volume (3 when the cap is 3, #HLFH).
+power-up volume, 3.
 
 Refusals (the node stays on the mesh): profile has no SSID; already in
 maintenance; HoloLifter only: the lift is moving.

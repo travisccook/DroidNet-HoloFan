@@ -1,17 +1,16 @@
 // The fan's volume around maintenance mode (HoloFan 0.9.12). Maintenance is
-// Wi-Fi at full transmit power, and at volume 3 the fan's own 20 dBm bursts
-// dip the ESP's supply into a brownout (bench 2026-10-13). So the fan plays
-// at volume 1 while it is in maintenance and gets its
-// volume back afterwards, also when maintenance ends in the reboot after an
-// OTA: the record lives in .noinit, which survives a software reset.
+// Wi-Fi at full transmit power, so the fan plays at volume 1 while it is in
+// maintenance and gets its volume back afterwards, also when maintenance ends
+// in the reboot after an OTA: the record lives in .noinit, which survives a
+// software reset.
 #ifndef FANLOGIC_MAINT_VOLUME_H
 #define FANLOGIC_MAINT_VOLUME_H
 #include <stdint.h>
 
 namespace fanlogic {
 
-constexpr int MAINT_VOLUME = 1;          // the volume while in maintenance
-constexpr int MAINT_RESTORE_CAP = -1;    // maintVolumeLeave: the old volume was not known; go back to the cap
+constexpr int MAINT_VOLUME = 1;            // the volume while in maintenance
+constexpr int MAINT_RESTORE_UNKNOWN = -1;  // maintVolumeLeave: the old volume was not known; unmute (top volume)
 
 struct MaintVolumeRecord {
   uint32_t magic;
@@ -48,13 +47,13 @@ inline int maintVolumeEnter(MaintVolumeRecord& r, int volume) {
 }
 
 // Back on the mesh, or the first boot after maintenance: the volume to set
-// (2 or 3), MAINT_RESTORE_CAP, or 0 (no valid record, or it was 1 before).
+// (2 or 3), MAINT_RESTORE_UNKNOWN, or 0 (no valid record, or it was 1 before).
 // Clears r.
 inline int maintVolumeLeave(MaintVolumeRecord& r) {
   if (!maintVolumeValid(r)) return 0;
   int v = r.volume;
   maintVolumeClear(r);
-  return v == 0 ? MAINT_RESTORE_CAP : v == MAINT_VOLUME ? 0 : v;
+  return v == 0 ? MAINT_RESTORE_UNKNOWN : v == MAINT_VOLUME ? 0 : v;
 }
 
 }  // namespace fanlogic

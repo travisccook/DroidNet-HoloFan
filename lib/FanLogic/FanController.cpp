@@ -79,7 +79,7 @@ bool FanController::takeUnprompted(char* out, size_t size) {
 
 bool FanController::switchBle() {
   const bool want = bleWant_ == 1;
-  for (int i = 0; i < 2; i++) {                  // one resend: the MCU drops input while busy (as capVolume)
+  for (int i = 0; i < 2; i++) {                  // one resend: the MCU drops input while busy (as setVolumeChecked)
     if (!act(want ? "c" : "d")) return false;
     bool read = false;
     for (int r = 0; r < VOLUME_READS && !read; r++) read = querySettings();
@@ -137,7 +137,7 @@ bool FanController::takeLeaseReport(char* out, size_t size) {
 void FanController::restoreSettingsAfterLease() {
   char done[UNPROMPTED_MAX] = {0}, w[24], num[12];
   loopChangedByMcu_ = pre_.loopKnown && st_.loopAll != pre_.loopAll;
-  if (!(overridden_ & OV_VOLUME) && pre_.volume >= 1 && pre_.volume <= cap_ && st_.volume != pre_.volume) {
+  if (!(overridden_ & OV_VOLUME) && pre_.volume >= 1 && pre_.volume <= VOLUME_MAX && st_.volume != pre_.volume) {
     snprintf(num, sizeof(num), "%d", pre_.volume);
     if (act("m", num)) {
       st_.volume = base_.volume = pre_.volume;
@@ -219,7 +219,7 @@ void FanController::forgetBaseline() {
 }
 
 // Every SETTINGS_POLL_MS while READY (and soon after a clip lease): report
-// what changed behind our back and cap a 3 unless #HLFY holds it.
+// what changed behind our back.
 void FanController::periodicSettings(uint32_t now) {
   if (restoreArmed_ || clipPending_) {
     if (!deadlineSet_) { restoreDeadline_ = now + RESTORE_MAX_MS; deadlineSet_ = true; }
@@ -229,7 +229,6 @@ void FanController::periodicSettings(uint32_t now) {
   bool soon = soonTries_ > 0;
   if (!soon && !due(now, nextSettings_)) return;
   nextSettings_ = now + SETTINGS_POLL_MS;
-  bool hadBase = baseValid_;
   char diff[UNPROMPTED_MAX] = {0};
   if (!querySettings(diff, sizeof(diff))) {
     if (soon) soonTries_--;
@@ -241,14 +240,6 @@ void FanController::periodicSettings(uint32_t now) {
     bootSettingsKnown_ = true;
     bootSettingsLate_ = true;
     bootSettings_ = base_;
-  }
-  if (st_.volume > cap_ && !loudAllowed_) {         // the cap first: volume 3 is the safety one
-    int was = st_.volume;
-    capVolume();
-    if (late) bootCapTo_ = baseValid_ ? st_.volume : -1;
-    size_t n = strlen(diff);
-    if (n) snprintf(diff + n, sizeof(diff) - n, " (capped)");
-    else snprintf(diff, sizeof(diff), "vol %d (capped; %s)", was, hadBase ? "again" : "no baseline");
   }
   if (bleWant_ >= 0 && !bleStuck_ && baseValid_ && base_.ble != (bleWant_ == 1) && switchBle()) {
     size_t n = strlen(diff);
@@ -327,37 +318,14 @@ bool FanController::act(const char* cmd, const char* arg) {
   return true;
 }
 
-void FanController::setVolumeCap(int cap) {
-  cap_ = cap == 3 ? 3 : VOLUME_MAX;
-  if (preMuteVolume_ > cap_) preMuteVolume_ = cap_;
-}
-
-// A volume above the cap (the MCU powers up at 3, and its IR remote can set
-// 3) is lowered and read back: the MCU drops input while busy, so one
-// resend if it did not take.
-void FanController::capVolume() {
-  char num[12];
-  snprintf(num, sizeof(num), "%d", cap_);
-  for (int i = 0; i < 2 && st_.volume > cap_; i++) {
-    if (!act("m", num)) return;
-    st_.volume = cap_;                           // the read-back corrects it if the MCU dropped the line
-    bool read = false;
-    for (int r = 0; r < VOLUME_READS && !read; r++) read = querySettings();
-    if (!read) { baseValid_ = false; return; }   // unverified: the next read is a new baseline, not a report
-  }
-}
-
 int FanController::formatBoot(char* out, size_t size) const {
   if (size == 0) return -1;
   int n;
   if (bootSettingsKnown_) {
-    char cap[32] = "";
-    if (bootCapTo_ > 0) snprintf(cap, sizeof(cap), " (capped to %d)", bootCapTo_);
-    else if (bootCapTo_ < 0) snprintf(cap, sizeof(cap), " (cap sent, not read back)");
-    n = snprintf(out, size, bootSettingsLate_ ? "[fan] MCU first settings (read late): ble %s, loop %s, br %d, vol %d%s, angle %d"
-                                              : "[fan] MCU at connect: ble %s, loop %s, br %d, vol %d%s, angle %d",
+    n = snprintf(out, size, bootSettingsLate_ ? "[fan] MCU first settings (read late): ble %s, loop %s, br %d, vol %d, angle %d"
+                                              : "[fan] MCU at connect: ble %s, loop %s, br %d, vol %d, angle %d",
                  bootSettings_.ble ? "on" : "off", bootSettings_.loopAll ? "all" : "one", bootSettings_.brightness,
-                 bootSettings_.volume, cap, bootSettings_.angle);
+                 bootSettings_.volume, bootSettings_.angle);
   } else {
     n = snprintf(out, size, "[fan] MCU at connect: settings not read");
   }
@@ -371,17 +339,15 @@ int FanController::setVolumeChecked(int v) {
   if (v < 1 || v > 3) return 0;
   char num[12];
   snprintf(num, sizeof(num), "%d", v);
-  if (st_.state != FanState::READY) {            // NOMCU: still lower it (no read-back), never raise it
+  if (st_.state != FanState::READY) {            // NOMCU: still send it, with no read-back
     char line[MCU_LINE_MAX];
     const char* args[1] = {num};
-    if (v <= cap_ && buildLine("m", args, 1, line, sizeof(line)) > 0 && link_.send(line)) {
-      loudAllowed_ = false;
+    if (buildLine("m", args, 1, line, sizeof(line)) > 0 && link_.send(line)) {
       baseValid_ = false;                        // unread: the next read is a new baseline
       settle(ACT_SETTLE_QUIET_MS, ACT_SETTLE_MAX_MS);
     }
     return 0;
   }
-  loudAllowed_ = v > cap_;                       // #HLFY: the periodic read leaves this 3 alone
   if (v != 1) muted_ = false;
   overridden_ |= OV_VOLUME;                      // wins over a pending restore
   for (int i = 0; i < 2; i++) {
@@ -389,7 +355,7 @@ int FanController::setVolumeChecked(int v) {
     st_.volume = v;                              // the read-back corrects it
     bool read = false;
     for (int r = 0; r < VOLUME_READS && !read; r++) read = querySettings();
-    if (!read) { st_.volume = 0; baseValid_ = false; return 0; }   // unknown: poll() reads it again and caps a 3
+    if (!read) { st_.volume = 0; baseValid_ = false; return 0; }   // unknown: poll() reads it again
     if (st_.volume == v) return v;
   }                                              // it reported another volume: "m" was dropped
   return st_.volume;
@@ -399,13 +365,10 @@ void FanController::becomeReady(uint32_t now) {
   st_.state = FanState::READY;
   misses_ = 0;
   bool first = !bootDone_;
-  if (first) {                                   // what the MCU said, before the cap touches it
+  if (first) {                                   // what the MCU said at connect
     bootSettingsKnown_ = baseValid_;
     bootSettings_ = base_;
   }
-  loudAllowed_ = false;
-  capVolume();
-  if (first && bootSettingsKnown_ && bootSettings_.volume > cap_) bootCapTo_ = baseValid_ ? st_.volume : -1;
   if (bleWant_ >= 0 && !bleStuck_ && baseValid_ && base_.ble != (bleWant_ == 1)) switchBle();
   nextSettings_ = now + SETTINGS_POLL_MS;
   refreshCatalog();
@@ -460,14 +423,11 @@ void FanController::poll(uint32_t now) {
     char diff[UNPROMPTED_MAX] = {0};
     if (recover(diff, sizeof(diff))) {
       setErr("none");
-      bool loud = st_.volume > cap_;
-      becomeReady(now);                              // caps a 3
+      becomeReady(now);
       if (diff[0]) {
         char text[UNPROMPTED_MAX];
-        snprintf(text, sizeof(text), "after NOMCU: %.70s%s", diff, loud ? " (capped)" : "");
+        snprintf(text, sizeof(text), "after NOMCU: %.70s", diff);
         report(text);
-      } else if (loud) {
-        report("after NOMCU: vol 3 (capped; no baseline)");
       }
     } else {
       nextPoll_ = now + NOMCU_RETRY_MS;
@@ -496,7 +456,6 @@ void FanController::execute(const holofan::Cmd& c, uint32_t now) {
   }
   now_ = now;
   if (c.type == CmdType::BLUETOOTH) wantBluetooth(c.param != 0);   // remembered even while NOMCU
-  if (c.type == CmdType::VOLUME_CAP) setVolumeCap(c.param);        // the same
   if (st_.state != FanState::READY) { setErr("nomcu"); return; }
   char num[12];
   snprintf(num, sizeof(num), "%d", c.param);
@@ -543,26 +502,23 @@ void FanController::execute(const holofan::Cmd& c, uint32_t now) {
       break;
     case CmdType::VOLUME: {
       if (c.param < 1 || c.param > 3) { setErr("badlevel"); return; }
-      int v = c.param > cap_ ? cap_ : c.param;
-      snprintf(num, sizeof(num), "%d", v);
-      if (act("m", num)) { st_.volume = v; base_.volume = v; muted_ = false; loudAllowed_ = false; }
+      if (act("m", num)) { st_.volume = c.param; base_.volume = c.param; muted_ = false; }
       break;
     }
     case CmdType::MUTE:                            // volume 1 is the MCU's floor: there is no 0
       if (muted_) return;
       if (act("m", "1")) {
-        preMuteVolume_ = st_.volume >= 1 && st_.volume <= cap_ ? st_.volume : cap_;
+        preMuteVolume_ = st_.volume >= 1 && st_.volume <= VOLUME_MAX ? st_.volume : VOLUME_MAX;
         st_.volume = 1;
         base_.volume = 1;
         muted_ = true;
-        loudAllowed_ = false;
       }
       break;
-    case CmdType::UNMUTE: {                        // only undoes a mute; at the floor without one, the cap
-      int v = muted_ ? preMuteVolume_ : (st_.volume == 1 ? cap_ : 0);
+    case CmdType::UNMUTE: {                        // only undoes a mute; at the floor without one, the top volume
+      int v = muted_ ? preMuteVolume_ : (st_.volume == 1 ? VOLUME_MAX : 0);
       if (v == 0) return;
       snprintf(num, sizeof(num), "%d", v);
-      if (act("m", num)) { st_.volume = v; base_.volume = v; muted_ = false; loudAllowed_ = false; }
+      if (act("m", num)) { st_.volume = v; base_.volume = v; muted_ = false; }
       break;
     }
     case CmdType::LOOP:
@@ -581,12 +537,6 @@ void FanController::execute(const holofan::Cmd& c, uint32_t now) {
     case CmdType::BLUETOOTH:
       if (!baseValid_) querySettings();
       if (baseValid_ && base_.ble != (bleWant_ == 1)) switchBle();
-      break;
-    case CmdType::VOLUME_CAP:                      // a lower cap takes effect now; a higher one raises nothing
-      if (st_.volume > cap_) {
-        loudAllowed_ = false;
-        capVolume();
-      }
       break;
     default:
       return;

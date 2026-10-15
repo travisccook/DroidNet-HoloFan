@@ -37,8 +37,6 @@ static McuSpi            s_spi;
 static char              s_trace[1536] = "";   // the last clip lease's MCU conversation (0.8.6: was 3 KB; heap is tight)
 static SemaphoreHandle_t s_linkLock = nullptr;   // the MCU task per iteration, or a clip lease
 static std::atomic<bool> s_linkUp{false};
-static std::atomic<int>  s_capGiven{-1};         // fanMcuSetVolumeCap(): -1 until main has read NVS
-static std::atomic<int>  s_cap{fanlogic::VOLUME_MAX};   // the controller's cap, for the mesh task
 
 static uint32_t nowMs() { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -49,12 +47,11 @@ static void publish() {
   char last[48], diag[sizeof(s_diag)];
   s_link.lastRx(last, sizeof(last));
   snprintf(diag, sizeof(diag),
-           "#HL:FANDIAG st=%s rxb=%lu tx=%lu tries=%lu ans=%d rx5=%d/%d sync18=%d/%d rst=%d chg=%lu v0=%d cap=%d txp=%d last=%s",
+           "#HL:FANDIAG st=%s rxb=%lu tx=%lu tries=%lu ans=%d rx5=%d/%d sync18=%d/%d rst=%d chg=%lu v0=%d txp=%d last=%s",
            s_fan.status().state == holofan::FanState::READY ? "READY" : "NOMCU", (unsigned long)s_link.rxBytes(),
            (unsigned long)s_link.txLines(), (unsigned long)s_fan.queryTries(), s_fan.mcuAnswered() ? 1 : 0, s_rxHigh,
            s_rxDriven, s_syncHigh, s_syncDriven, (int)esp_reset_reason(), (unsigned long)s_fan.unprompted(),
-           s_fan.bootVolume(), s_fan.volumeCap(), fanMeshTxDbm(), last);
-  s_cap.store(s_fan.volumeCap());
+           s_fan.bootVolume(), fanMeshTxDbm(), last);
   xSemaphoreTake(s_lock, portMAX_DELAY);
   s_status = s_fan.status();
   s_catalog = s_fan.catalog();
@@ -155,8 +152,6 @@ static void mcuTask(void*) {
   }
   s_linkUp = true;
   con("[fan] UART1 230400 up; waking the MCU");
-  for (int i = 0; i < 50 && s_capGiven.load() < 0; i++) vTaskDelay(pdMS_TO_TICKS(10));   // NVS comes up right after this task starts
-  s_fan.setVolumeCap(s_capGiven.load());         // never given: the default, 2
   xSemaphoreTake(s_linkLock, portMAX_DELAY);
   s_fan.begin(nowMs());
   xSemaphoreGive(s_linkLock);
@@ -263,10 +258,6 @@ int fanMcuVolumeResult(uint32_t id) {
   xSemaphoreGive(s_lock);
   return v;
 }
-
-void fanMcuSetVolumeCap(int cap) { s_capGiven.store(cap < 0 ? 0 : cap); }
-
-int fanMcuVolumeCap() { return s_cap.load(); }
 
 bool fanMcuReady() {
   holofan::Status s;

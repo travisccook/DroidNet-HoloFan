@@ -110,7 +110,7 @@ void test_begin_ready_loads_settings_catalog_and_play() {
   TEST_ASSERT_EQUAL((int)FanState::READY, (int)s.state);
   TEST_ASSERT_TRUE(fan->mcuAnswered());
   TEST_ASSERT_EQUAL(2, s.brightness);
-  TEST_ASSERT_EQUAL(VOLUME_MAX, s.volume);   // the stored 3 is lowered at connect
+  TEST_ASSERT_EQUAL(3, s.volume);            // the MCU's own volume is left alone
   TEST_ASSERT_TRUE(s.loopAll);
   TEST_ASSERT_EQUAL(4, fan->catalog().count);
   TEST_ASSERT_EQUAL_STRING("02-Name.bin", s.fileName);
@@ -258,29 +258,26 @@ void test_mute_and_unmute_restore_volume() {
 }
 
 // Volume 1 with no mute of ours (set by the app or #HLFV1): UNMUTE raises it
-// to the cap (2), not 3.
+// to the top volume, 3.
 void test_unmute_at_floor_volume_sets_max() {
   fan->begin(0);
   run(CmdType::VOLUME, 1);
   run(CmdType::UNMUTE);
-  TEST_ASSERT_EQUAL_STRING("m 2\n", mcu->last().c_str());
+  TEST_ASSERT_EQUAL_STRING("m 3\n", mcu->last().c_str());
   TEST_ASSERT_EQUAL(VOLUME_MAX, fan->status().volume);
 }
 
-// Volume 3 browns out the fan's ESP and cuts its audio (bench 2026-10-07):
-// a volume-3 request sends 2.
-void test_volume_3_is_capped_to_2() {
+// There is no cap: every volume 1-3 goes to the MCU as asked.
+void test_volume_3_is_sent() {
   fan->begin(0);
   run(CmdType::VOLUME, 1);
   run(CmdType::VOLUME, 3);
-  TEST_ASSERT_EQUAL_STRING("m 2\n", mcu->last().c_str());
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
+  TEST_ASSERT_EQUAL_STRING("m 3\n", mcu->last().c_str());
+  TEST_ASSERT_EQUAL(3, fan->status().volume);
 }
 
-// 0.9.11 (#HLFH3, a saved choice; volume 3 ran clean at 8 dBm on the bench): with
-// the cap at 3 the MCU's own volume 3 is left alone at connect ...
-void test_cap_3_keeps_a_stored_volume_3() {
-  fan->setVolumeCap(3);
+// The MCU powers up at volume 3: the fan leaves it alone at connect ...
+void test_connect_keeps_a_stored_volume_3() {
   mcu->applyVolume = true;
   fan->begin(0);                                   // get_setting says volume 3
   for (const auto& l : mcu->lines) TEST_ASSERT_FALSE(l.rfind("m ", 0) == 0);
@@ -290,94 +287,14 @@ void test_cap_3_keeps_a_stored_volume_3() {
   TEST_ASSERT_EQUAL_STRING("[fan] MCU at connect: ble on, loop all, br 2, vol 3, angle 164; playing 02-Name.bin 8/24", out);
 }
 
-// ... and at the periodic settings read,
-void test_cap_3_survives_the_periodic_read() {
-  fan->setVolumeCap(3);
+// ... and at the periodic settings read.
+void test_periodic_read_leaves_volume_3() {
   mcu->applyVolume = true;
   fan->begin(0);
   fan->poll(SETTINGS_POLL_MS);
   for (const auto& l : mcu->lines) TEST_ASSERT_FALSE(l.rfind("m ", 0) == 0);
   char out[UNPROMPTED_MAX];
   TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
-}
-
-// ... and a volume-3 request sends 3.
-void test_cap_3_lets_volume_3_through() {
-  fan->setVolumeCap(3);
-  fan->begin(0);
-  run(CmdType::VOLUME, 1);
-  run(CmdType::VOLUME, 3);
-  TEST_ASSERT_EQUAL_STRING("m 3\n", mcu->last().c_str());
-  TEST_ASSERT_EQUAL(3, fan->status().volume);
-}
-
-// Volume 1 with no mute of ours: UNMUTE raises it to the cap, 3 here.
-void test_cap_3_unmute_at_floor_sets_3() {
-  fan->setVolumeCap(3);
-  fan->begin(0);
-  run(CmdType::VOLUME, 1);
-  run(CmdType::UNMUTE);
-  TEST_ASSERT_EQUAL_STRING("m 3\n", mcu->last().c_str());
-}
-
-// The way back with no firmware update: #HLFH2 lowers a 3 at once.
-void test_cap_command_lowers_a_3_at_once() {
-  fan->setVolumeCap(3);
-  mcu->applyVolume = true;
-  fan->begin(0);
-  TEST_ASSERT_EQUAL(3, fan->status().volume);
-  run(CmdType::VOLUME_CAP, 2);
-  TEST_ASSERT_EQUAL(2, fan->volumeCap());
-  TEST_ASSERT_EQUAL(1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
-  run(CmdType::VOLUME, 3);                         // and volume 3 is capped again
-  TEST_ASSERT_EQUAL_STRING("m 2\n", mcu->last().c_str());
-}
-
-// #HLFH3 only allows 3: it never raises the volume by itself.
-void test_cap_command_raises_nothing() {
-  mcu->applyVolume = true;
-  fan->begin(0);                                   // stored 3: capped to 2
-  size_t n = mcu->lines.size();
-  run(CmdType::VOLUME_CAP, 3);
-  TEST_ASSERT_EQUAL(3, fan->volumeCap());
-  TEST_ASSERT_EQUAL(n, mcu->lines.size());
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
-  run(CmdType::VOLUME, 3);
-  TEST_ASSERT_EQUAL_STRING("m 3\n", mcu->last().c_str());
-}
-
-// As Bluetooth: the cap is remembered while the MCU does not answer.
-void test_cap_command_is_remembered_while_nomcu() {
-  mcu->applyVolume = true;
-  mcu->alive = false;
-  fan->begin(0);
-  run(CmdType::VOLUME_CAP, 3);
-  mcu->alive = true;
-  fan->poll(NOMCU_RETRY_MS);
-  TEST_ASSERT_EQUAL((int)FanState::READY, (int)fan->status().state);
-  for (const auto& l : mcu->lines) TEST_ASSERT_FALSE(l.rfind("m ", 0) == 0);
-  TEST_ASSERT_EQUAL(3, fan->status().volume);
-}
-
-// Anything but 3 is the default cap, 2 (an unset or damaged saved value).
-void test_bad_cap_is_the_default() {
-  TEST_ASSERT_EQUAL(VOLUME_MAX, fan->volumeCap());
-  fan->setVolumeCap(3);
-  fan->setVolumeCap(7);
-  TEST_ASSERT_EQUAL(VOLUME_MAX, fan->volumeCap());
-  fan->setVolumeCap(3);
-  fan->setVolumeCap(0);
-  TEST_ASSERT_EQUAL(VOLUME_MAX, fan->volumeCap());
-}
-
-// The MCU keeps its volume through power cycles (and the IR remote can set
-// 3): a stored 3 is lowered to 2 when the link comes up.
-void test_connect_lowers_stored_volume_3() {
-  mcu->applyVolume = true;
-  fan->begin(0);                                   // get_setting says volume 3
-  TEST_ASSERT_EQUAL(1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
 }
 
 void test_connect_keeps_stored_volume_2() {
@@ -387,54 +304,36 @@ void test_connect_keeps_stored_volume_2() {
   TEST_ASSERT_EQUAL(2, fan->status().volume);
 }
 
-void test_reconnect_after_nomcu_lowers_stored_volume_3() {
+void test_reconnect_after_nomcu_keeps_volume_3() {
   mcu->applyVolume = true;
   mcu->alive = false;
   fan->begin(0);
   mcu->alive = true;
   fan->poll(NOMCU_RETRY_MS);
   TEST_ASSERT_EQUAL((int)FanState::READY, (int)fan->status().state);
-  TEST_ASSERT_EQUAL(1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
-}
-
-// The MCU drops input while busy: the lowered volume is read back and sent
-// again if it did not take.
-void test_connect_resends_a_dropped_volume_cap() {
-  mcu->applyVolume = true;
-  mcu->dropVolume = 1;
-  fan->begin(0);
-  TEST_ASSERT_EQUAL(2, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL_STRING("setting on all 2 2 164 F-S12\n", mcu->setting.c_str());
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
-}
-
-void test_connect_sends_the_cap_once_when_it_takes() {
-  mcu->applyVolume = true;
-  fan->begin(0);
-  TEST_ASSERT_EQUAL(1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
+  for (const auto& l : mcu->lines) TEST_ASSERT_FALSE(l.rfind("m ", 0) == 0);
+  TEST_ASSERT_EQUAL(3, fan->status().volume);
 }
 
 // READY through PlayInfo alone (get_setting silent, e.g. after the ESP reset
 // under a playing MCU): the volume is unknown, so get_setting is retried every
-// SETTINGS_RETRY_MS while READY and a stored 3 is lowered once it answers.
-void test_unknown_volume_is_read_later_and_capped() {
+// SETTINGS_RETRY_MS while READY until it answers.
+void test_unknown_volume_is_read_later() {
   mcu->setting = "";
   mcu->applyVolume = true;
   fan->begin(0);
   TEST_ASSERT_EQUAL(0, fan->status().volume);
   mcu->setting = "setting on all 2 3 164 F-S12\n";
   for (uint32_t t = POLL_MS; t < SETTINGS_RETRY_MS; t += POLL_MS) fan->poll(t);   // the 3 s poll cadence
-  TEST_ASSERT_EQUAL(0, mcu->count("m 2\n"));
+  TEST_ASSERT_EQUAL(0, fan->status().volume);
   fan->poll(SETTINGS_RETRY_MS);
-  TEST_ASSERT_EQUAL(1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
+  TEST_ASSERT_EQUAL(3, fan->status().volume);
+  for (const auto& l : mcu->lines) TEST_ASSERT_FALSE(l.rfind("m ", 0) == 0);
 }
 
-// 0.9.8: the settings are read every SETTINGS_POLL_MS while READY, so a 3 set
-// behind our back (an MCU re-init, the IR remote, the phone app) is capped
-// within that time, and changes we did not command are reported.
+// 0.9.8: the settings are read every SETTINGS_POLL_MS while READY, so changes
+// we did not command (an MCU re-init, the IR remote, the phone app) are
+// reported within that time.
 void test_settings_are_read_every_period() {
   mcu->setting = "setting on all 2 2 164 F-S12\n";
   fan->begin(0);
@@ -448,18 +347,18 @@ void test_settings_are_read_every_period() {
   TEST_ASSERT_EQUAL(0, (int)fan->unprompted());
 }
 
-void test_periodic_read_caps_a_hidden_3_and_reports_it() {
+void test_periodic_read_reports_a_hidden_volume_change() {
   mcu->setting = "setting on all 2 2 164 F-S12\n";
   mcu->applyVolume = true;
   fan->begin(0);
   mcu->setting = "setting on all 2 3 164 F-S12\n";        // the MCU went to 3 by itself
-  int caps = mcu->count("m 2\n");
+  size_t n = mcu->lines.size();
   fan->poll(SETTINGS_POLL_MS);
-  TEST_ASSERT_EQUAL(caps + 1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
+  for (size_t i = n; i < mcu->lines.size(); i++) TEST_ASSERT_FALSE(mcu->lines[i].rfind("m ", 0) == 0);
+  TEST_ASSERT_EQUAL(3, fan->status().volume);
   char out[120];
   TEST_ASSERT_TRUE(fan->takeUnprompted(out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING("vol 2->3 (capped)", out);
+  TEST_ASSERT_EQUAL_STRING("vol 2->3", out);
   TEST_ASSERT_EQUAL(1, (int)fan->unprompted());
   TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));   // taken once
 }
@@ -502,24 +401,6 @@ void test_raw_lines_rebaseline_silently() {
   TEST_ASSERT_EQUAL_STRING("vol 1->2", out);
 }
 
-// #HLFY holds 3 on purpose: setVolumeChecked(3) allows it until a volume up
-// to the cap is set again.
-void test_hlfy_hold_is_not_capped() {
-  mcu->setting = "setting on all 2 2 164 F-S12\n";
-  mcu->applyVolume = true;
-  fan->begin(0);
-  TEST_ASSERT_EQUAL(3, fan->setVolumeChecked(3));
-  int caps = mcu->count("m 2\n");
-  fan->poll(SETTINGS_POLL_MS);
-  TEST_ASSERT_EQUAL(caps, mcu->count("m 2\n"));
-  char out[120];
-  TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
-  TEST_ASSERT_EQUAL(2, fan->setVolumeChecked(2));
-  mcu->setting = "setting on all 2 3 164 F-S12\n";
-  fan->poll(2 * SETTINGS_POLL_MS);
-  TEST_ASSERT_EQUAL(caps + 2, mcu->count("m 2\n"));      // the restore, then the cap again
-}
-
 // After a clip lease (upload, delete, format) the MCU may have re-initialised:
 // read the settings at the next poll instead of up to 30 s later.
 void test_settings_checked_soon_after_a_lease() {
@@ -530,10 +411,10 @@ void test_settings_checked_soon_after_a_lease() {
   fan->checkSettingsSoon();
   mcu->setting = "setting on all 2 3 164 F-S12\n";        // re-initialised: loop all, volume 3
   fan->poll(POLL_MS);
-  TEST_ASSERT_EQUAL(reads + 2, mcu->count("get_setting\n"));   // the check, then the cap's read-back
+  TEST_ASSERT_EQUAL(reads + 1, mcu->count("get_setting\n"));
   char out[120];
   TEST_ASSERT_TRUE(fan->takeUnprompted(out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING("loop one->all vol 2->3 (capped)", out);
+  TEST_ASSERT_EQUAL_STRING("loop one->all vol 2->3", out);
 }
 
 // In loop one the clip must not change unless we asked.
@@ -567,30 +448,17 @@ void test_loop_all_clip_changes_are_normal() {
   TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
 }
 
-// Review of 0.9.8: a read-back lost after our own "m" must not leave a stale
-// baseline that later reports our cap as UNPROMPTED.
-void test_lost_cap_readback_is_not_reported_later() {
-  mcu->applyVolume = true;
-  mcu->silentAfterM = VOLUME_READS;                // every read-back after "m" is lost
-  fan->begin(0);                                   // stored 3: capped, read-back lost
-  mcu->silentAfterM = 0;
-  fan->poll(SETTINGS_POLL_MS);                     // reads 2: our own cap took
-  char out[120];
-  TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
-}
-
-// A cap made without a baseline (or of a 3 that was already the baseline) is
-// still reported.
-void test_cap_without_baseline_is_reported() {
+// READY through PlayInfo only: the first settings read has no baseline to
+// compare with, so it reports nothing and fills the boot record (late).
+void test_late_first_settings_read_fills_the_boot_record() {
   mcu->setting = "";
   fan->begin(0);                                   // READY through PlayInfo only
   mcu->setting = "setting on all 2 3 164 F-S12\n";
   mcu->applyVolume = true;
   fan->poll(SETTINGS_POLL_MS);
   char out[120];
-  TEST_ASSERT_TRUE(fan->takeUnprompted(out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING("vol 3 (capped; no baseline)", out);
-  TEST_ASSERT_EQUAL(3, fan->bootVolume());         // the first read fills the boot record (late)
+  TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
+  TEST_ASSERT_EQUAL(3, fan->bootVolume());
   TEST_ASSERT_TRUE(fan->takeBootLate());
   TEST_ASSERT_FALSE(fan->takeBootLate());
 }
@@ -633,16 +501,16 @@ void test_mute_state_follows_the_mcu() {
 // The check after a clip lease keeps trying for a few polls if the MCU is silent.
 void test_post_lease_check_retries() {
   mcu->setting = "setting on one 2 2 164 F-S12\n";
-  mcu->applyVolume = true;
   fan->begin(0);
   fan->checkSettingsSoon();
   mcu->silentSettings = 1;                          // the first post-lease read is lost
-  mcu->setting = "setting on all 2 3 164 F-S12\n";
-  int caps = mcu->count("m 2\n");
+  mcu->setting = "setting on all 2 2 164 F-S12\n";
   fan->poll(POLL_MS);
-  TEST_ASSERT_EQUAL(caps, mcu->count("m 2\n"));
-  fan->poll(2 * POLL_MS);
-  TEST_ASSERT_EQUAL(caps + 1, mcu->count("m 2\n"));
+  char out[120];
+  TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
+  fan->poll(2 * POLL_MS);                           // tried again: the change is seen
+  TEST_ASSERT_TRUE(fan->takeUnprompted(out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("loop one->all", out);
 }
 
 // 0.9.8: after a clip lease (upload/delete/format) put back what the MCU
@@ -931,25 +799,6 @@ void test_stuck_bluetooth_rearms_when_it_reads_right() {
   TEST_ASSERT_EQUAL(ds + 1, mcu->count("d\n"));
 }
 
-// The 30 s read caps a 3 before it switches Bluetooth (the cap is the safety one).
-void test_cap_comes_before_bluetooth() {
-  fan->wantBluetooth(false);
-  mcu->setting = "setting off all 2 2 164 F-S12\n";
-  mcu->applyVolume = true;
-  fan->begin(0);
-  size_t mark = mcu->lines.size();
-  mcu->setting = "setting on all 2 3 164 F-S12\n";      // both changed (an MCU re-init)
-  fan->poll(SETTINGS_POLL_MS);
-  size_t m = (size_t)-1, d = (size_t)-1;
-  for (size_t i = mark; i < mcu->lines.size(); i++) {
-    if (m == (size_t)-1 && mcu->lines[i] == "m 2\n") m = i;
-    if (d == (size_t)-1 && mcu->lines[i] == "d\n") d = i;
-  }
-  TEST_ASSERT_TRUE(m != (size_t)-1);
-  TEST_ASSERT_TRUE(d != (size_t)-1);
-  TEST_ASSERT_TRUE(m < d);
-}
-
 // An MCU that keeps reporting ble on: one report, no "d" every 30 s.
 void test_bluetooth_that_does_not_switch_is_reported_once() {
   fan->wantBluetooth(false);
@@ -967,15 +816,15 @@ void test_bluetooth_that_does_not_switch_is_reported_once() {
   TEST_ASSERT_FALSE(fan->takeUnprompted(out, sizeof(out)));
 }
 
-// What the MCU said at connect, before the cap touched it (0.9.8).
-void test_boot_record_keeps_the_settings_before_the_cap() {
-  mcu->applyVolume = true;                                // stored 3
+// What the MCU said at connect (0.9.8).
+void test_boot_record_keeps_the_settings_at_connect() {
+  mcu->setting = "setting on all 2 2 164 F-S12\n";
   fan->begin(0);
   char out[160];
   TEST_ASSERT_TRUE(fan->formatBoot(out, sizeof(out)) > 0);
-  TEST_ASSERT_EQUAL_STRING("[fan] MCU at connect: ble on, loop all, br 2, vol 3 (capped to 2), angle 164; playing 02-Name.bin 8/24",
+  TEST_ASSERT_EQUAL_STRING("[fan] MCU at connect: ble on, loop all, br 2, vol 2, angle 164; playing 02-Name.bin 8/24",
                            out);
-  TEST_ASSERT_EQUAL(3, fan->bootVolume());
+  TEST_ASSERT_EQUAL(2, fan->bootVolume());
 }
 
 void test_boot_record_unknown_without_settings() {
@@ -997,11 +846,12 @@ void test_settle_after_wake_and_after_a_silent_query() {
   TEST_ASSERT_TRUE(mcu->settledAfter(0));                     // after the first unanswered get_setting
 }
 
-// #HLFY (bench, 0.9.4): set a volume past the cap and read it back, sending
-// once more if the MCU dropped the line; returns what the MCU reports.
-void test_checked_volume_sets_3_past_the_cap() {
+// #HLFY (bench, 0.9.4): set a volume and read it back, sending once more if
+// the MCU dropped the line; returns what the MCU reports.
+void test_checked_volume_sets_and_reads_back() {
+  mcu->setting = "setting on all 2 2 164 F-S12\n";
   mcu->applyVolume = true;
-  fan->begin(0);                                   // the stored 3 is lowered to 2 first
+  fan->begin(0);
   TEST_ASSERT_EQUAL(3, fan->setVolumeChecked(3));
   TEST_ASSERT_EQUAL(1, mcu->count("m 3\n"));
   TEST_ASSERT_EQUAL(3, fan->status().volume);
@@ -1009,6 +859,7 @@ void test_checked_volume_sets_3_past_the_cap() {
 }
 
 void test_checked_volume_resends_a_dropped_line() {
+  mcu->setting = "setting on all 2 2 164 F-S12\n";
   mcu->applyVolume = true;
   fan->begin(0);
   mcu->dropVolume = 1;
@@ -1017,6 +868,7 @@ void test_checked_volume_resends_a_dropped_line() {
 }
 
 void test_checked_volume_reports_what_the_mcu_kept() {
+  mcu->setting = "setting on all 2 2 164 F-S12\n";
   mcu->applyVolume = true;
   fan->begin(0);
   mcu->dropVolume = 2;                             // both sends dropped
@@ -1033,7 +885,7 @@ void test_checked_volume_silent_mcu_reports_0() {
   TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(3));
   TEST_ASSERT_EQUAL(1, mcu->count("m 3\n"));         // silence is not a dropped "m": no resend
   TEST_ASSERT_EQUAL(reads + VOLUME_READS, mcu->count("get_setting\n"));
-  TEST_ASSERT_EQUAL(0, fan->status().volume);       // unknown: poll reads it again and caps it
+  TEST_ASSERT_EQUAL(0, fan->status().volume);       // unknown: poll reads it again
 }
 
 // Bench 2026-10-07 (0.9.4): right after "m" the MCU often leaves get_setting
@@ -1048,38 +900,22 @@ void test_checked_volume_waits_out_a_busy_mcu() {
   TEST_ASSERT_EQUAL(reads + VOLUME_READS, mcu->count("get_setting\n"));
 }
 
-// No read-back after a restore: the volume is unknown, so the next settings
-// read (SETTINGS_RETRY_MS cadence) lowers a 3 that stuck.
-void test_unconfirmed_volume_is_read_again_and_capped() {
-  mcu->applyVolume = true;
-  fan->begin(0);
-  fan->setVolumeChecked(3);
-  mcu->alive = false;
-  TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(2));   // "m 2" sent twice, never confirmed
-  mcu->alive = true;
-  mcu->dropVolume = 0;
-  mcu->setting = "setting on all 2 3 164 F-S12\n";  // it did not take
-  int lowered = mcu->count("m 2\n");
-  for (uint32_t t = POLL_MS; t <= SETTINGS_RETRY_MS + POLL_MS; t += POLL_MS) fan->poll(t);
-  TEST_ASSERT_EQUAL(lowered + 1, mcu->count("m 2\n"));
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
-}
-
-// NOMCU: a lower volume (<= the cap) is still sent, without a read-back; 3 never is.
-void test_checked_volume_nomcu_still_lowers() {
+// NOMCU: the volume is still sent, without a read-back.
+void test_checked_volume_nomcu_sends_unread() {
   mcu->alive = false;
   fan->begin(0);
-  TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(2));
-  TEST_ASSERT_EQUAL(1, mcu->count("m 2\n"));
+  TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(3));
+  TEST_ASSERT_EQUAL(1, mcu->count("m 3\n"));
   TEST_ASSERT_EQUAL_STRING("nomcu", fan->status().err);
 }
 
-void test_checked_volume_needs_ready_and_a_level() {
+void test_checked_volume_needs_a_level() {
   mcu->alive = false;
   fan->begin(0);
   size_t n = mcu->lines.size();
-  TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(3));
-  TEST_ASSERT_EQUAL(n, mcu->lines.size());         // NOMCU: never raised
+  TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(0));
+  TEST_ASSERT_EQUAL(0, fan->setVolumeChecked(4));
+  TEST_ASSERT_EQUAL(n, mcu->lines.size());
   mcu->alive = true;
   fan->poll(NOMCU_RETRY_MS);
   n = mcu->lines.size();
@@ -1106,11 +942,9 @@ void test_checked_volume_3_survives_polls_and_restores() {
 // clip: mculog:prev.). Every action is followed by a settle (as ClipOps does
 // after "h" and CT) before the next line goes out.
 void test_actions_let_the_mcu_settle() {
+  mcu->setting = "setting on all 2 2 164 F-S12\n";
   mcu->applyVolume = true;
-  fan->begin(0);                                   // caps the stored 3: "m 2" then get_setting
-  size_t cap = mcu->indexOf("m 2\n");
-  TEST_ASSERT_TRUE(cap != (size_t)-1);
-  TEST_ASSERT_TRUE(mcu->settledAfter(cap));
+  fan->begin(0);
   TEST_ASSERT_EQUAL(3, fan->setVolumeChecked(3));
   TEST_ASSERT_TRUE(mcu->settledAfter(mcu->indexOf("m 3\n")));
   const struct { CmdType t; int p; const char* line; } acts[] = {
@@ -1166,14 +1000,14 @@ void test_play_slot_needs_the_mcu() {
   TEST_ASSERT_EQUAL_STRING("nomcu", fan->status().err);
 }
 
-// Volume never read (get_setting silent): a mute saves the cap, not 3.
-void test_unmute_with_unknown_volume_restores_the_cap() {
+// Volume never read (get_setting silent): a mute saves the top volume, 3.
+void test_unmute_with_unknown_volume_restores_3() {
   mcu->setting = "";
   fan->begin(0);
   run(CmdType::MUTE);
   run(CmdType::UNMUTE);
-  TEST_ASSERT_EQUAL_STRING("m 2\n", mcu->last().c_str());
-  TEST_ASSERT_EQUAL(2, fan->status().volume);
+  TEST_ASSERT_EQUAL_STRING("m 3\n", mcu->last().c_str());
+  TEST_ASSERT_EQUAL(3, fan->status().volume);
 }
 
 // Any reply carrying "PlayInfo" proves the MCU is alive, parsed or not.
@@ -1311,34 +1145,23 @@ int main(int, char**) {
   RUN_TEST(test_levels_out_of_range_ignored);
   RUN_TEST(test_mute_and_unmute_restore_volume);
   RUN_TEST(test_unmute_at_floor_volume_sets_max);
-  RUN_TEST(test_volume_3_is_capped_to_2);
-  RUN_TEST(test_cap_3_keeps_a_stored_volume_3);
-  RUN_TEST(test_cap_3_survives_the_periodic_read);
-  RUN_TEST(test_cap_3_lets_volume_3_through);
-  RUN_TEST(test_cap_3_unmute_at_floor_sets_3);
-  RUN_TEST(test_cap_command_lowers_a_3_at_once);
-  RUN_TEST(test_cap_command_raises_nothing);
-  RUN_TEST(test_cap_command_is_remembered_while_nomcu);
-  RUN_TEST(test_bad_cap_is_the_default);
-  RUN_TEST(test_connect_lowers_stored_volume_3);
+  RUN_TEST(test_volume_3_is_sent);
+  RUN_TEST(test_connect_keeps_a_stored_volume_3);
+  RUN_TEST(test_periodic_read_leaves_volume_3);
   RUN_TEST(test_connect_keeps_stored_volume_2);
-  RUN_TEST(test_reconnect_after_nomcu_lowers_stored_volume_3);
-  RUN_TEST(test_unmute_with_unknown_volume_restores_the_cap);
-  RUN_TEST(test_connect_resends_a_dropped_volume_cap);
-  RUN_TEST(test_connect_sends_the_cap_once_when_it_takes);
-  RUN_TEST(test_unknown_volume_is_read_later_and_capped);
+  RUN_TEST(test_reconnect_after_nomcu_keeps_volume_3);
+  RUN_TEST(test_unmute_with_unknown_volume_restores_3);
+  RUN_TEST(test_unknown_volume_is_read_later);
   RUN_TEST(test_settings_are_read_every_period);
-  RUN_TEST(test_periodic_read_caps_a_hidden_3_and_reports_it);
+  RUN_TEST(test_periodic_read_reports_a_hidden_volume_change);
   RUN_TEST(test_unprompted_loop_ble_brightness_angle_changes_are_reported);
   RUN_TEST(test_commanded_changes_are_not_reported);
   RUN_TEST(test_raw_lines_rebaseline_silently);
-  RUN_TEST(test_hlfy_hold_is_not_capped);
   RUN_TEST(test_settings_checked_soon_after_a_lease);
   RUN_TEST(test_unprompted_clip_change_in_loop_one);
   RUN_TEST(test_commanded_clip_change_is_not_reported);
   RUN_TEST(test_loop_all_clip_changes_are_normal);
-  RUN_TEST(test_lost_cap_readback_is_not_reported_later);
-  RUN_TEST(test_cap_without_baseline_is_reported);
+  RUN_TEST(test_late_first_settings_read_fills_the_boot_record);
   RUN_TEST(test_loop_one_starts_a_fresh_clip_baseline);
   RUN_TEST(test_forget_baseline_reads_settings_soon);
   RUN_TEST(test_mute_state_follows_the_mcu);
@@ -1364,19 +1187,17 @@ int main(int, char**) {
   RUN_TEST(test_bluetooth_that_does_not_switch_is_reported_once);
   RUN_TEST(test_one_dropped_d_still_switches_off);
   RUN_TEST(test_stuck_bluetooth_rearms_when_it_reads_right);
-  RUN_TEST(test_cap_comes_before_bluetooth);
-  RUN_TEST(test_boot_record_keeps_the_settings_before_the_cap);
+  RUN_TEST(test_boot_record_keeps_the_settings_at_connect);
   RUN_TEST(test_boot_record_unknown_without_settings);
   RUN_TEST(test_settle_after_wake_and_after_a_silent_query);
-  RUN_TEST(test_checked_volume_sets_3_past_the_cap);
+  RUN_TEST(test_checked_volume_sets_and_reads_back);
   RUN_TEST(test_checked_volume_resends_a_dropped_line);
   RUN_TEST(test_checked_volume_reports_what_the_mcu_kept);
   RUN_TEST(test_checked_volume_silent_mcu_reports_0);
-  RUN_TEST(test_checked_volume_needs_ready_and_a_level);
+  RUN_TEST(test_checked_volume_needs_a_level);
   RUN_TEST(test_checked_volume_3_survives_polls_and_restores);
-  RUN_TEST(test_unconfirmed_volume_is_read_again_and_capped);
   RUN_TEST(test_checked_volume_waits_out_a_busy_mcu);
-  RUN_TEST(test_checked_volume_nomcu_still_lowers);
+  RUN_TEST(test_checked_volume_nomcu_sends_unread);
   RUN_TEST(test_actions_let_the_mcu_settle);
   RUN_TEST(test_play_slot_plays_the_matching_name);
   RUN_TEST(test_play_slot_missing_is_noslot);

@@ -1,7 +1,7 @@
 # HoloFan command reference (#HL over the WCB mesh)
 
 The HoloFan and the HoloLifter are both nodes on the droid's WCB ESP-NOW mesh,
-and a droid controller reaches them through any WCB. This reference covers the
+and a droid controller reaches them through any WCB. This page covers the
 HoloFan (node 16), the #HLZ node commands both nodes share, and the fan's
 UART console; the lift's own commands are documented in DroidNet-HoloLifter.
 
@@ -64,23 +64,12 @@ Playback (silent):
     #HLFP           pause
     #HLFN / #HLFR   next / previous
     #HLFB<1-3>      brightness
-    #HLFV<1-3>      volume, capped at 2 since HoloFan 0.9.0 (#HLFV3 sets 2)
-                    unless the cap is raised with #HLFH3 (0.9.11, below).
-                    At volume 3 the ESP can brown out and the audio can go
-                    silent for ~10 s (docs/HOW_IT_WORKS.md, section 7). The
-                    MCU comes up at volume 3 after every power cycle. A 3
-                    is lowered to 2 when the
-                    fan connects to the MCU, read back, and sent again if
-                    the MCU dropped it (0.9.1); since 0.9.8 the fan also
-                    reads the settings every 30 s and right after any clip
-                    upload/delete/format, and lowers a 3 set behind its back
-                    (MCU re-init, IR remote, phone app) at once, except
-                    during a #HLFY test. The fan's local UART0 console
-                    (mcu m 3) is not capped
+    #HLFV<1-3>      volume. The MCU comes up at volume 3 after every power
+                    cycle
     #HLFM / #HLFU   mute / unmute. The MCU's lowest volume is 1 (there is no
                     0), so mute sets volume 1; unmute restores the volume from
                     before the mute. Not muted: unmute does nothing, except at
-                    volume 1 it sets volume 2
+                    volume 1 it sets volume 3
     #HLFL<O|A>      loop one / all
     #HLFW<1|0>      panel switcher on / off
     #HLFC           re-read the clip list from the SD card
@@ -119,21 +108,21 @@ Queries (reply, from the fan's cached state; never waits on the MCU):
 
 Diagnostics (bench):
 
-    #HLFQ -> #HL:FANDIAG st=.. rxb=.. tx=.. tries=.. ans=.. rx5=.. sync18=.. rst=.. chg=.. v0=.. cap=.. txp=.. last=..
+    #HLFQ -> #HL:FANDIAG st=.. rxb=.. tx=.. tries=.. ans=.. rx5=.. sync18=.. rst=.. chg=.. v0=.. txp=.. last=..
              MCU link counters: rxb bytes from the MCU (0 = it never
              answered), tx lines sent, tries get_setting attempts, rst the
              ESP's last reset reason (1 power-on, 3 software, 9 brownout),
              chg the changes nobody commanded (0.9.8, see below), v0 the
-             volume the MCU reported at the first connect before the cap
-             (0.9.8; 0 = not read), txp the mesh TX power in dBm that #HLFO
-             saved (0.9.10; 20 = the default), last the last bytes received
+             volume the MCU reported at the first connect (0.9.8; 0 = not
+             read), txp the mesh TX power in dBm (0.9.10; 8 = the
+             default), last the last bytes received
     Unsolicited RTERM lines (0.9.8), sent to the WCB that last sent an
              #HLF/#HLZ command:
-             "[fan] MCU at connect: ble on, loop all, br 2, vol 3 (capped
-             to 2), angle 164; playing <clip> <progress>/<total>" once
+             "[fan] MCU at connect: ble on, loop all, br 2, vol 3, angle
+             164; playing <clip> <progress>/<total>" once
              after each ESP boot, at the first command (an OTA or ESP
              reset does not power-cycle the MCU; a relay cycle does)
-             "[mcu] UNPROMPTED: vol 2->3 (capped)", "loop one->all",
+             "[mcu] UNPROMPTED: vol 2->3", "loop one->all",
              "ble on->off", "br ..", "angle ..", "clip A->B" (loop one),
              "after NOMCU: ..": the MCU changed without a command of ours
              (seen by the 30 s settings read or the play poll); not counted:
@@ -146,8 +135,8 @@ Diagnostics (bench):
              "[mcu] mculog:...": what the MCU prints by itself (0.9.2)
     #HLFX<cmd> [args]   one raw line to the MCU; its reply comes back as an
              RTERM line ([TERM:16][mcu] ...). Over the mesh only read and
-             playback commands pass (never v, u, w, y; m only 1-2)
-    #HLFY<r><s>     bench test (HoloFan 0.9.4): volume 3 past the cap for s
+             playback commands pass (never v, u, w or y)
+    #HLFY<r><s>     bench test (HoloFan 0.9.4): volume 3 for s
              seconds (10-300) with the ESP's radio on (r=1), fully off
              (r=0: ESP-NOW and Wi-Fi stopped, no receive or transmit
              current) or receiving only (r=2, 0.9.6: the node sends
@@ -174,8 +163,7 @@ Diagnostics (bench):
              (test n): phase <PRE|QUIET|STEP|HOLD|RESTORE|REJOIN>, x s
              into the hold, y s into the test; rst=<reason>". Refused
              when the MCU is not READY, off the mesh, or while a test
-             runs; maintenance is refused while a test runs. Never in a
-             show: volume 3 can brown the fan out and cut its audio
+             runs; maintenance is refused while a test runs
     #HLFE<lo><hi><s>  sag meter (0.9.6): the ESP's brownout comparator
              watches its own supply for s seconds (10-300), its threshold
              stepping through levels lo..hi 25 ms at a time (0.9.7: in a
@@ -193,38 +181,18 @@ Diagnostics (bench):
              refused meanwhile. Run it longer than any #HLFY r=0/2 it
              covers, so its report is not held behind the radio
     #HLFO<dd>       mesh TX power (0.9.10; saved): dd dBm, two digits, 02-20;
-             00 = the default, 20 dBm. Used whenever the fan is on the
-             mesh, from the next transmission. Reply: "[mesh] TX power <dd>
+             00 = the default, 8 dBm (0.9.13; 20 before). Used whenever
+             the fan is on the mesh, from the next transmission. Reply: "[mesh] TX power <dd>
              dBm saved (maintenance always uses 20); the radio is at <x>
              dBm", x read back from the radio (it gave back the 8.00 it was
              set to on 2026-10-13, although Espressif documents steps of 2,
              5, 7, 8.5, 11, 13, 14, 15, 16.5, 18 and 20 dBm, the one at or
              under dd). Maintenance mode (Wi-Fi: uploads, OTA) always transmits at
              20 dBm, and since 0.9.12 the fan plays at volume 1 meanwhile
-             (docs/MAINTENANCE_API.md). Why: at volume 3 the fan's own 20 dBm bursts dip its
-             supply and start ~10 s audio silences (bench 2026-10-13); the
-             dips shrink with the power and were gone at 2 dBm (#HLFJ).
-             A power too low for the WCBs to hear the fan (missing replies,
-             OFFLINE lines) does not lock it out: it still hears them, so
-             #HLFO20 or #HLFO00 puts it back. Refused during #HLFE/#HLFJ
-             and #HLFY
-    #HLFH<2|3>      volume cap (0.9.11; saved): the highest volume the fan
-             sets or leaves alone. 2 = the default (as 0.9.0-0.9.10). 3: the
-             MCU's own volume 3 is no longer lowered at boot, at the 30 s
-             settings read or after a clip upload, and #HLFV3 sets 3; the
-             command itself never raises the volume. #HLFH2 puts the cap
-             back and lowers a 3 at once, with no firmware update. cap= in
-             #HLFQ shows it. The MCU powers up at volume 3, so with the cap
-             at 3 the fan is at volume 3 after every power cycle. Raw
-             "#HLFXm 3" stays refused; #HLFY then restores the volume it
-             found, up to the cap. Replies: "[fan] volume cap 3 saved: ..."
-             / "[fan] volume cap 2 saved (the default): ...". Refused during
-             #HLFE/#HLFJ and #HLFY. Why 3 is allowed at all: with the mesh TX power at 8 dBm (#HLFO08) volume 3
-             ran clean on 04-Beeps and a real clip; the bench clip 03-Rings
-             still reset the ESP at volume 3, at 8 and at 2 dBm, when the
-             fan replied at a volume step or clip start
-             (docs/HOW_IT_WORKS.md, section 7). A brownout reset
-             costs the mesh link for a few seconds; the MCU plays on
+             (docs/MAINTENANCE_API.md). A power too low for the WCBs to
+             hear the fan (missing replies, OFFLINE lines) does not lock it
+             out: it still hears them, so #HLFO20 puts full power back.
+             Refused during #HLFE/#HLFJ and #HLFY
     #HLFK<ss>       bench (0.9.8): mesh heartbeat every ss seconds (02-25;
              00 = the normal 10 s; back to 10 s at the next boot). WCBs
              mark a node OFFLINE after ~55 s without one (configurable per
@@ -304,9 +272,8 @@ The `mesh ...` settings are the same as on the HoloLifter's USB console; the
 mesh password, MAC octets, channel and peer floor can only be set here, never
 over the mesh.
 
-Bench and diagnostics only: #HLFY, #HLFE, #HLFJ, #HLFK and #HLFH3. They exist
-to measure the fan; #HLFY and #HLFH3 run it at volume 3, which can brown it
-out.
+Bench and diagnostics only: #HLFY, #HLFE, #HLFJ and #HLFK. They exist to
+measure the fan.
 
 ## Design rationale
 

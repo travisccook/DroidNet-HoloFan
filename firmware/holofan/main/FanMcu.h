@@ -26,7 +26,7 @@ void fanMcuDiag(char* out, size_t size);
 // arguments are refused. False if the queue is full.
 bool fanMcuRaw(const char* line);
 
-// Bench (#HLFY): ask the MCU task to set volume v (1-3, past the cap) and
+// Bench (#HLFY): ask the MCU task to set volume v (1-3) and
 // read it back (FanController::setVolumeChecked). Replaces a request the
 // MCU task has not taken yet. Returns the request id (never 0), or 0 if the
 // MCU task is not running.
@@ -35,7 +35,7 @@ uint32_t fanMcuVolumeChecked(int v);
 // request replaced it), else the volume the MCU reported (0 = none).
 int fanMcuVolumeResult(uint32_t id);
 
-// 0.9.8: the "[fan] MCU at connect: ..." line (settings before the cap, first
+// 0.9.8: the "[fan] MCU at connect: ..." line (settings at connect, first
 // clip), once, when it exists. False until then and after it was taken.
 bool fanMcuTakeBootLine(char* out, size_t size);
 // UNPROMPTED and after-a-clip-lease reports raised while no RTERM line could
@@ -45,12 +45,6 @@ bool fanMcuTakeLatchedUnprompted(char* out, size_t size);
 
 // Clip transfer (HTTP task): the MCU link is up and the MCU is READY.
 bool fanMcuReady();
-// 0.9.11: the saved volume cap (#HLFH: 3, anything else is 2). main gives it
-// as soon as NVS is up; the MCU task waits for it (at most 0.5 s) before the
-// handshake, so a cap of 3 is known before the cap at connect.
-void fanMcuSetVolumeCap(int cap);
-// The cap the controller uses now.
-int fanMcuVolumeCap();
 // Take the MCU link for a whole clip operation: the MCU task pauses its
 // UART traffic and heartbeat until fanMcuRelease(). Null if the UART never
 // came up or the lease was not free within timeoutMs.

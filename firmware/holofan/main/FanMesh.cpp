@@ -118,7 +118,7 @@ static bool radioStart() {
 
 int fanMeshTxDbm() { return fanlogic::txPowerDbm(s_txDbm.load()); }
 
-// #HLFY<r><s> (bench): volume 3 past the cap for s seconds with the radio
+// #HLFY<r><s> (bench): volume 3 for s seconds with the radio
 // on (r=1) or off (r=0), then the old volume (LoudTest.h). Each volume is
 // read back before the next step. While the test holds the radio down,
 // RTERM lines wait in the console queue (16 lines) and go out after rejoin.
@@ -135,7 +135,7 @@ static void startLoudTest(int param) {
   if (st.state != holofan::FanState::READY) { con("[test] refused: MCU not ready"); return; }
   if (s_maint.state() != maint::State::MESH || !s_radioUp) { con("[test] refused: not on the mesh"); return; }
   if (sagProbeRunning()) { con("[test] refused: #HLFJ is sending (TX power changed)"); return; }
-  if (!s_loud.start(param, st.volume, nowMs(), fanMcuVolumeCap())) { con("[test] refused: a test is running"); return; }
+  if (!s_loud.start(param, st.volume, nowMs())) { con("[test] refused: a test is running"); return; }
   s_loudHoldEnd = -1;
   s_loudNoBod = sagRunning();
   uint32_t seq = fanlogic::loudRecordValid(s_rec) ? s_rec.seq + 1 : 1;
@@ -188,7 +188,7 @@ static void loudLoop() {
       }
       break;
     case A::VOLUME_RESTORE:
-      if (s_loudHoldEnd < 0) {                       // a #HLFV, a mute or a reconnect cap during the hold shows here
+      if (s_loudHoldEnd < 0) {                       // a #HLFV or a mute during the hold shows here
         holofan::Status st;
         fanMcuSnapshot(&st, nullptr);
         s_loudHoldEnd = st.volume;
@@ -278,17 +278,6 @@ static void runFan(const holofan::Cmd& c, uint8_t sender) {
       configstore::saveBluetooth(c.param != 0);
       con("[fan] Bluetooth %s (saved; off is the default since 0.9.9)", c.param ? "ON" : "off");
       return;
-    case holofan::CmdType::VOLUME_CAP:
-      if (sagRunning()) { con("[fan] refused: no NVS writes while #HLFE/#HLFJ has the brownout reset off"); return; }
-      if (s_loud.active()) { con("[fan] refused: #HLFY test running"); return; }
-      if (!fanMcuPost(c)) {
-        con("[fan] busy: volume cap %d not applied and not saved; send it again", c.param);
-        return;
-      }
-      configstore::saveVolumeCap((uint8_t)c.param);
-      if (c.param == 3) con("[fan] volume cap 3 saved: #HLFV3 sets 3 and the MCU's own volume 3 stays (#HLFH2 puts the cap back)");
-      else con("[fan] volume cap 2 saved (the default): a volume 3 is lowered to 2");
-      return;
     case holofan::CmdType::TX_POWER: {
       if (sagRunning()) { con("[mesh] refused: no NVS writes while #HLFE/#HLFJ has the brownout reset off"); return; }
       if (s_loud.active()) { con("[mesh] refused: #HLFY test running"); return; }
@@ -365,15 +354,15 @@ static void maintVolumeLoop() {
   if (st.state != holofan::FanState::READY) { s_mvAt = nowMs() + 1000; return; }
   fanlogic::MaintVolumeRecord keep = s_mv;
   int v = fanlogic::maintVolumeLeave(s_mv);
-  if (v != 0 && !fanMcuPost(v == fanlogic::MAINT_RESTORE_CAP ? holofan::Cmd(holofan::CmdType::UNMUTE, 0)
-                                                             : holofan::Cmd(holofan::CmdType::VOLUME, v))) {
+  if (v != 0 && !fanMcuPost(v == fanlogic::MAINT_RESTORE_UNKNOWN ? holofan::Cmd(holofan::CmdType::UNMUTE, 0)
+                                                                 : holofan::Cmd(holofan::CmdType::VOLUME, v))) {
     s_mv = keep;                                    // the MCU task's queue is full: again shortly
     s_mvAt = nowMs() + 500;
     return;
   }
   s_mvDue = false;
   if (v > 0) con("[maint] volume back to %d", v);
-  else if (v == fanlogic::MAINT_RESTORE_CAP) con("[maint] volume back to the cap");
+  else if (v == fanlogic::MAINT_RESTORE_UNKNOWN) con("[maint] volume unmuted (it was not known before)");
 }
 
 // Maintenance mode (docs/MAINTENANCE_API.md): leave the mesh, join profile p, serve the
@@ -390,7 +379,7 @@ static void maintLoop() {
         char host[25];
         nodecfg::hostnameFromAlias(s_cfg.alias, host, sizeof(host));
         maintidf::join(s_cfg.profile[s_maint.profile() - 1], host);
-        setTxPower(fanlogic::txPowerQuarterDbm(0));     // uploads and OTA: all the range the dome's Wi-Fi link has
+        setTxPower(fanlogic::maintTxQuarterDbm());      // uploads and OTA: all the range the dome's Wi-Fi link has
       }
       break;
     case maint::Action::START_SERVER: {
