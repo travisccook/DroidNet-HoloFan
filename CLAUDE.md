@@ -23,6 +23,7 @@ python3 -B -m unittest discover -s firmware/holofan/tests          # fanflash.py
 python3 -B -m unittest discover -s tools/bench -p 'test_*.py'
 python3 -B -m unittest discover -s tools/holofan_clip -p 'test_*.py'
 python3 -B -m unittest discover -s tools -p 'test_check_private.py'
+python3 -B -m unittest discover -s tools -p 'test_readme_commands.py'
 ```
 
 ESP-IDF must be at commit 11edebdbbe (release/v5.4); build.sh warns
@@ -73,7 +74,9 @@ same holds for their test suites.
 Commands are `#HL...` lines sent through a WCB as `;wHoloFan,#HLFS\r`. Only
 queries reply, as a mesh broadcast starting with `#HL:`; actions are silent.
 docs/SERIAL_COMMANDS.md is the reference; keep it in step with
-lib/HolofanProtocol and lib/FanLogic.
+lib/HolofanProtocol and lib/FanLogic. README.md carries a copy under
+"Command reference": change both together (tools/test_readme_commands.py
+checks).
 
 ## Documentation rules
 

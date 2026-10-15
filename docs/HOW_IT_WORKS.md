@@ -30,7 +30,9 @@ USB-C socket; the speaker is in the stationary body.
 
 ## 2. The programming header
 
-Five holes, numbered from the end with the pin-1 bracket:
+Five holes in a row. Hole 1 is at the pin-1 bracket, a short white bar
+printed across that end of the row, nearer the antenna wire (ANT1); hole
+5 is next to the board's angled corner:
 
     hole 1  GND
     hole 2  GPIO9   strap: held to GND (through about 330 ohm) at power-up
@@ -38,6 +40,8 @@ Five holes, numbered from the end with the pin-1 bracket:
     hole 3  fan RX  (U0RXD)  <- adapter TX
     hole 4  fan TX  (U0TXD)  -> adapter RX
     hole 5  3V3     feeds the board's logic and the LEDs
+
+![The five holes, numbered](images/header-holes-numbered.jpg)
 
 There is no EN (reset) pin: a reset means removing and reapplying 3.3 V. The
 other boot strap, GPIO8, is not on the header; holding GPIO9 low alone was
