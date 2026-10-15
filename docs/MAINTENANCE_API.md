@@ -162,13 +162,17 @@ There is no idle timeout.
            400 {"ok":false,"err":"confirm"} without the exact token
     DELETE /api/clips/<name>
            takes about 5-9 s: the fan lists the card, sends the delete,
-           waits 3 s (the MCU never confirms it) and lists again. Give
-           it a 30 s timeout, and after a timeout list the clips
+           waits 3 s (the MCU never confirms it) and lists again; up to
+           about 20 s when the MCU is busy, because an empty or cut-off
+           listing is asked for again, up to 3 times (HoloFan 0.9.15).
+           Give it a 30 s timeout, and after a timeout list the clips
            (GET /api/clips) before trying again.
-           200 {"ok":true}
+           200 {"ok":true}             gone from a full listing
            400 {"ok":false,"err":"name"}
            404 {"ok":false,"err":"notfound"}
            500 {"ok":false,"err":"still","partial":true}
+                                       still listed, or no full listing came
+                                       back to confirm it (0.9.15)
            503 as GET
 
     The clip routes do not check the mode: they work whenever the fan's

@@ -183,6 +183,39 @@ void test_delete_still_there() {
   TEST_ASSERT_EQUAL(ClipErr::STILL, deleteClip(l, "99-Test.bin", scratch, sizeof(scratch)));
 }
 
+// A delete is confirmed only by a listing the MCU really gave: the clip gone
+// and every other clip still listed. The MCU drops lines while it is busy
+// (deleting the clip it plays makes it switch clips), so an empty or cut-off
+// reply is listed again; with no usable listing it is STILL, never OK.
+void test_delete_empty_listing_after_is_not_ok() {
+  FakeLink l;
+  l.lists = {"02-Name.bin\n99-Test.bin\n", ""};
+  TEST_ASSERT_EQUAL(ClipErr::STILL, deleteClip(l, "99-Test.bin", scratch, sizeof(scratch)));
+  TEST_ASSERT_EQUAL(1 + DELETE_LIST_TRIES, l.count("s\n"));
+}
+
+void test_delete_empty_then_full_listing_is_ok() {
+  FakeLink l;
+  l.lists = {"02-Name.bin\n03-Name.bin\n99-Test.bin\n", "", "02-Name.bin\n03-Name.bin\n"};
+  TEST_ASSERT_EQUAL(ClipErr::OK, deleteClip(l, "99-Test.bin", scratch, sizeof(scratch)));
+  TEST_ASSERT_EQUAL(3, l.count("s\n"));
+}
+
+void test_delete_cut_off_listing_is_listed_again() {
+  FakeLink l;
+  l.lists = {"02-Name.bin\n03-Name.bin\n99-Test.bin\n", "02-Name.bin\n", "02-Name.bin\n03-Name.bin\n"};
+  TEST_ASSERT_EQUAL(ClipErr::OK, deleteClip(l, "99-Test.bin", scratch, sizeof(scratch)));
+  TEST_ASSERT_EQUAL(3, l.count("s\n"));
+}
+
+// The only clip on the card: an empty listing is the right answer.
+void test_delete_only_clip_empty_listing_is_ok() {
+  FakeLink l;
+  l.lists = {"99-Test.bin\n", ""};
+  TEST_ASSERT_EQUAL(ClipErr::OK, deleteClip(l, "99-Test.bin", scratch, sizeof(scratch)));
+  TEST_ASSERT_EQUAL(2, l.count("s\n"));
+}
+
 void test_delete_bad_name_sends_nothing() {
   FakeLink l;
   l.lists = {"v\n"};
@@ -1364,6 +1397,10 @@ int main(int, char**) {
   RUN_TEST(test_delete_ok);
   RUN_TEST(test_delete_not_found);
   RUN_TEST(test_delete_still_there);
+  RUN_TEST(test_delete_empty_listing_after_is_not_ok);
+  RUN_TEST(test_delete_empty_then_full_listing_is_ok);
+  RUN_TEST(test_delete_cut_off_listing_is_listed_again);
+  RUN_TEST(test_delete_only_clip_empty_listing_is_ok);
   RUN_TEST(test_delete_bad_name_sends_nothing);
   RUN_TEST(test_delete_underscore_name_allowed);
   RUN_TEST(test_upload_happy_path);

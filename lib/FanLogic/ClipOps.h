@@ -19,6 +19,7 @@ constexpr size_t   CLIP_MAX_BYTES = 128u * 1024u * 1024u;
 constexpr uint32_t CREATE_TIMEOUT_MS = 10000;                     // stock: ~10 s for CT/CF
 constexpr uint32_t VERDICT_TIMEOUT_MS = 10000;
 constexpr uint32_t DELETE_READ_MS = 3000;                         // `u` is never ACKed
+constexpr int      DELETE_LIST_TRIES = 3;                         // listings that may confirm a delete
 // The MCU drops input while it is busy (bench trace 2026-10-06): after a
 // pause and after CT, wait until it has been quiet this long (at most
 // SETTLE_MAX_MS) before sending more.
@@ -283,7 +284,10 @@ int listClips(McuLink& link, char* scratch, size_t scratchSize);
 
 // Delete one clip: 400-class NAME if !isClipName; NOT_FOUND if the "s" list
 // does not have it; else "u <name>" (then read for the whole DELETE_READ_MS:
-// the MCU never ACKs; this is the settle time), list again: STILL if it is still there, else OK.
+// the MCU never ACKs; this is the settle time), list again: STILL if it is still
+// there; OK only from a listing that has every other clip of the first one (an
+// empty or cut-off reply is listed again, up to DELETE_LIST_TRIES; none usable:
+// STILL).
 // `scratch` holds the "s" reply (8 KB is enough for 100 names).
 // force: skip the "listed" check and send "u" anyway (for a file the MCU's
 // list never shows); then OK unless the name is still listed.

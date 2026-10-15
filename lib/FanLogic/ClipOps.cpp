@@ -131,14 +131,32 @@ int listClips(McuLink& link, char* scratch, size_t scratchSize) {
   return n + link.collect(scratch, scratchSize, LIST_QUIET_MS, LIST_MAX_MS);
 }
 
+// The names in a listing other than `name`.
+static int countOthers(const char* list, const char* name) {
+  const char* p = list;
+  char n[holofan::CLIP_NAME_MAX + 1];
+  int count = 0;
+  while (nextClipName(p, n, sizeof(n)))
+    if (strcmp(n, name) != 0) count++;
+  return count;
+}
+
 ClipErr deleteClip(McuLink& link, const char* name, char* scratch, size_t scratchSize, bool force) {
   char line[MCU_LINE_MAX];
   if (!isClipName(name) || !deleteLine(name, line, sizeof(line))) return ClipErr::NAME;
   listClips(link, scratch, scratchSize);
   if (!force && !listHas(scratch, name)) return ClipErr::NOT_FOUND;
+  const int others = countOthers(scratch, name);
   link.expect(line, nullptr, 0, DELETE_READ_MS);   // settle: the MCU never ACKs `u`
-  listClips(link, scratch, scratchSize);
-  return listHas(scratch, name) ? ClipErr::STILL : ClipErr::OK;
+  // Only a listing the MCU really gave confirms it: the clip gone and every
+  // other clip still listed. A busy MCU drops lines, so an empty or cut-off
+  // reply is listed again; with no usable listing the clip may still be there.
+  for (int i = 0; i < DELETE_LIST_TRIES; i++) {
+    listClips(link, scratch, scratchSize);
+    if (listHas(scratch, name)) return ClipErr::STILL;
+    if (countOthers(scratch, name) >= others) return ClipErr::OK;
+  }
+  return ClipErr::STILL;
 }
 
 // After a failed upload: "u <name>", then list. True if the file may still
