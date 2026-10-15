@@ -99,7 +99,12 @@ bool parseZ(const char* line, ZCmd& out) {
     case 'K': {
       if ((r[1] != 'S' && r[1] != 'P') || (r[2] != '1' && r[2] != '2')) return false;
       out.num = r[2] - '0';
-      if (!hexDecode(r + 3, out.text, sizeof(out.text))) return false;
+      if (r[3] == '=') {                            // plain text: the rest of the line
+        if (strlen(r + 4) >= sizeof(out.text)) return false;   // never cut short
+        copyStr(out.text, sizeof(out.text), r + 4);
+      } else if (!hexDecode(r + 3, out.text, sizeof(out.text))) {
+        return false;
+      }
       if (r[1] == 'S') { out.type = ZType::SSID; return validSsid(out.text); }
       out.type = ZType::PASS;
       return validPass(out.text);

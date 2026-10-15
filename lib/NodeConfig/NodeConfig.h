@@ -53,6 +53,8 @@ struct ZCmd {
 };
 
 // Parse a normalized #HLZ line. False if it is not a valid #HLZ command.
+// #HLZKS<p> / #HLZKP<p> take the SSID or passphrase as hex, or as plain text
+// after '=' (the rest of the line: no '^', no trailing space).
 bool parseZ(const char* line, ZCmd& out);
 
 enum class ZResult {

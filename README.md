@@ -318,14 +318,15 @@ Settings (saved):
     #HLZN<alias>    name on the mesh (after a reboot)
     #HLZI<1-19>     node id (after a reboot)
     #HLZP<0|1>      query replies off / on
-    #HLZKS<p><hex>  Wi-Fi profile p (1 or 2): network name, in hex
-    #HLZKP<p><hex>  Wi-Fi profile p: passphrase, in hex (empty = open)
+    #HLZKS<p>=name  Wi-Fi profile p (1 or 2): network name
+    #HLZKP<p>=pass  Wi-Fi profile p: passphrase (empty = open network)
     #HLZX<p>        maintenance mode on Wi-Fi profile p (below)
     #HLZQ  -> #HL:NODE id=.. name=.. reply=on|off ...
 
-Hex example: the network name "My Home" is 4D7920486F6D65, so
-#HLZKS14D7920486F6D65. The console on the programming header (step 6) sets
-the same things without hex, and is the only place to set the mesh
+For example `;wHoloFan,#HLZKS1=My Home`, then `;wHoloFan,#HLZKP1=secret123`.
+A name or passphrase that contains `^`, or ends in a space, has to go in hex
+instead (docs/SERIAL_COMMANDS.md) or through the console on the programming
+header (step 6). The console is also the only place to set the mesh
 password, MAC octets and channel.
 
 The full reference, with the bench and diagnostic commands, is

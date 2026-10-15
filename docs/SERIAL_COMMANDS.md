@@ -236,8 +236,10 @@ docs/MAINTENANCE_API.md.
     #HLZI<1-19>     node id                                           saved, after reboot
     #HLZN<alias>    alias / WDP name: 1-24 of A-Z a-z 0-9 _ . -,
                     not starting with a digit                          saved, after reboot
-    #HLZKS<p><hex>  Wi-Fi profile p (1 = home, 2 = DroidNet) SSID, hex  saved
-    #HLZKP<p><hex>  profile p passphrase, hex (empty = open network)    saved
+    #HLZKS<p>=name  Wi-Fi profile p (1 = home, 2 = DroidNet) SSID       saved
+    #HLZKP<p>=pass  profile p passphrase (empty = open network)         saved
+    #HLZKS<p><hex>  the same SSID, in hex                               saved
+    #HLZKP<p><hex>  the same passphrase, in hex (empty = open network)  saved
     #HLZX<p>        enter maintenance mode on profile p (see docs/MAINTENANCE_API.md)
     #HLZQ           query (reply):
                     #HL:NODE id=.. name=.. reply=on|off ch=.. q=.. v2=<0|1> up=<0|1>
@@ -246,7 +248,11 @@ docs/MAINTENANCE_API.md.
                      failures, dup duplicates dropped, rt retries, gu sends
                      given up)
 
-Hex example: SSID "My Home" is 4D7920486F6D65, so #HLZKS14D7920486F6D65.
+Plain text (HoloLifter 1.0.1, HoloFan 0.9.14) is the rest of the line after
+'=', case and spaces kept: #HLZKS1=My Home. It cannot carry a '^' (a WCB
+splits lines there) or a trailing space (trimmed from every line); send
+those in hex: SSID "My Home" is 4D7920486F6D65, so #HLZKS14D7920486F6D65.
+Spaces passing through a WCB untouched is untested.
 
 Security: WCB meshes are unencrypted, so these can be sniffed by anyone in
 radio range. The mesh password, MAC octets, channel and peer floor can only be

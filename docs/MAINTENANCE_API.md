@@ -7,7 +7,8 @@ update either board after its one wired flash.
 ## Entering maintenance mode
 
 1. Store a Wi-Fi profile on the node (once): over the mesh with
-   #HLZKS<p><hex ssid> and #HLZKP<p><hex passphrase> (p = 1 home, 2 DroidNet),
+   #HLZKS<p>=<ssid> and #HLZKP<p>=<passphrase> (p = 1 home, 2 DroidNet; or
+   in hex, docs/SERIAL_COMMANDS.md),
    or on the HoloLifter's USB console with "mesh ssid" / "mesh pass".
 2. Send #HLZX<p> to the node (e.g. ;wHoloLifter,#HLZX2\r on a WCB), or
    "mesh maint <p>" on the HoloLifter's USB console.

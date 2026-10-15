@@ -80,6 +80,30 @@ void test_parse_z_rejects() {
   for (const char* b : bad) TEST_ASSERT_FALSE_MESSAGE(parseZ(b, z), b);
 }
 
+// Plain text after '=' (no hex to work out): the rest of the line, case,
+// spaces and commas kept. Hex stays for a name with '^' (a WCB splits lines
+// there) or a trailing space (trimmed off every line).
+void test_parse_z_wifi_plain_text() {
+  ZCmd z;
+  TEST_ASSERT_TRUE(parseZ("#HLZKS1=My Home", z)); TEST_ASSERT_EQUAL((int)ZType::SSID, (int)z.type);
+  TEST_ASSERT_EQUAL(1, z.num); TEST_ASSERT_EQUAL_STRING("My Home", z.text);
+  TEST_ASSERT_TRUE(parseZ("#HLZKP2=pass word,1", z)); TEST_ASSERT_EQUAL((int)ZType::PASS, (int)z.type);
+  TEST_ASSERT_EQUAL(2, z.num); TEST_ASSERT_EQUAL_STRING("pass word,1", z.text);
+  TEST_ASSERT_TRUE(parseZ("#HLZKP1=", z)); TEST_ASSERT_EQUAL_STRING("", z.text);   // open network
+  TEST_ASSERT_TRUE(parseZ("#HLZKS2=4D79", z)); TEST_ASSERT_EQUAL_STRING("4D79", z.text);   // '=': taken as text
+}
+
+// The same limits as hex: SSID 1-32, passphrase empty or 8-63, never cut short.
+void test_parse_z_wifi_plain_text_rejects() {
+  ZCmd z;
+  const char* bad[] = {"#HLZKS1=", "#HLZKP1=short", "#HLZKS1=123456789012345678901234567890123",
+                       "#HLZKP1=1234567890123456789012345678901234567890123456789012345678901234",
+                       "#HLZKS3=Home", "#HLZKS1=Tab\there"};
+  for (const char* b : bad) TEST_ASSERT_FALSE_MESSAGE(parseZ(b, z), b);
+  TEST_ASSERT_TRUE(parseZ("#HLZKS1=12345678901234567890123456789012", z));             // 32
+  TEST_ASSERT_TRUE(parseZ("#HLZKP1=123456789012345678901234567890123456789012345678901234567890123", z));   // 63
+}
+
 void test_apply_z() {
   NodeConfig c = base();
   ZCmd z;
@@ -192,6 +216,8 @@ int main(int, char**) {
   RUN_TEST(test_hex_decode);
   RUN_TEST(test_parse_z_commands);
   RUN_TEST(test_parse_z_rejects);
+  RUN_TEST(test_parse_z_wifi_plain_text);
+  RUN_TEST(test_parse_z_wifi_plain_text_rejects);
   RUN_TEST(test_apply_z);
   RUN_TEST(test_node_reply_fits_one_mesh_command);
   RUN_TEST(test_usb_parse_and_apply);
