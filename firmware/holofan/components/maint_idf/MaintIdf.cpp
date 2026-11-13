@@ -8,9 +8,11 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_net_stack.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_timer.h"
+#include "lwip/netif.h"
 #include "lwip/sockets.h"
 #include "esp_wifi.h"
 #include "mdns.h"
@@ -36,8 +38,31 @@ static volatile uint32_t s_disc = 0;
 static volatile uint32_t s_reason = 0;
 static constexpr const char* CLIPS_PREFIX = "/api/clips/";
 
+// Bench 2026-11-13 (0.9.12 and 0.9.16 builds, fan in the dome, RSSI -75 to
+// -85 dBm): frames to the fan are lost by length, and the length that still
+// arrives moves from minute to minute (one-way UDP, 100 each: 550 B 0 %
+// lost, 800 B 21-26 %, 1000 B 69-73 %; an hour earlier 1000 B 4-31 %).
+// TCP at the 536-byte MSS (about 610 bytes on air) sat on that edge: the
+// same transfer ran at 10 KB/s or at 90 KB/s. With 300-byte segments it
+// ran at 45-100 KB/s in both states (5 of 5 runs). lwIP advertises
+// min(TCP_MSS, netif MTU - 40) in its SYN (tcp_eff_send_mss_netif), and
+// Kconfig will not take an MSS below 536, so maintenance lowers the
+// station's MTU instead: every client then sends 300-byte segments with no
+// change on its side. Receiving is not limited by the MTU.
+static constexpr uint16_t MAINT_MTU = 340;
+static constexpr uint16_t NORMAL_MTU = 1500;           // what the Wi-Fi netif starts with
+
+static esp_err_t setMtu(void* ctx) {                    // runs in the TCP/IP task
+  struct netif* n = s_netif ? (struct netif*)esp_netif_get_netif_impl(s_netif) : nullptr;
+  if (n) n->mtu = (u16_t)(uintptr_t)ctx;
+  return ESP_OK;
+}
+
 static void onEvent(void*, esp_event_base_t base, int32_t id, void* data) {
-  if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) s_gotIp = true;
+  if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+    esp_netif_tcpip_exec(setMtu, (void*)(uintptr_t)MAINT_MTU);   // before the first client connects
+    s_gotIp = true;
+  }
   else if (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP) s_gotIp = false;
   else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     s_gotIp = false;
@@ -482,6 +507,7 @@ void stop() {
   wifi_config_t none = {};
   esp_wifi_set_config(WIFI_IF_STA, &none);
   esp_wifi_stop();
+  esp_netif_tcpip_exec(setMtu, (void*)(uintptr_t)NORMAL_MTU);
   s_gotIp = false;
 }
 

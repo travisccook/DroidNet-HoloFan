@@ -27,14 +27,20 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 # Spec 2026-10-07 D9: advertise a 536-byte TCP MSS. The fan's antenna spins
 # inside the dome and large Wi-Fi frames are lost first (ping: 1400 B 70 %,
 # 1000 B 37 %, 700 B 0 %), so every client sends ~600-byte frames. lwIP's
-# own default; Kconfig range 536..1460.
+# own default; Kconfig range 536..1460. 0.9.16 goes lower through the MTU
+# (below): 536 was still on the edge of what arrives.
 CONFIG_LWIP_TCP_MSS=536
 
-# The TCP receive mailbox must hold a window of MSS-sized segments (Kconfig:
-# TCP_WND / MSS + 2 = 4288 / 536 + 2 = 10), else lwIP drops segments before
-# httpd. 0.8.5 cut the window from 5760 to 4288 to bound the heap.
-CONFIG_LWIP_TCP_WND_DEFAULT=4288
-CONFIG_LWIP_TCP_RECVMBOX_SIZE=10
+# 0.9.16: in maintenance the fan advertises a 300-byte MSS (MaintIdf.cpp
+# lowers the station's MTU to 340; Kconfig takes no MSS below 536). The
+# window is Kconfig's smallest, 2440 bytes = 8 such segments, so one window
+# fits the Wi-Fi driver's 10 dynamic RX buffers, and the TCP receive
+# mailbox holds a window of segments (Kconfig: TCP_WND / MSS + 2 =
+# 2440 / 300 + 2 = 10.1), else lwIP drops segments before httpd. Bench
+# 2026-11-13: with the 4288-byte window (14 segments of 256) small segments
+# were retransmitted 13-18 %; with 2440 the fan took 45-100 KB/s.
+CONFIG_LWIP_TCP_WND_DEFAULT=2440
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=12
 
 # Spec 2026-10-07 bench (0.8.1): ping 500 B 0 % loss but TCP staging ran at
 # 1-3.5 KB/s with 26 s silences. The AP aggregates TCP segments into long

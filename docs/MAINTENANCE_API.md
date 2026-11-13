@@ -337,8 +337,14 @@ client reconnects. One session at a time.
        rebooted; a partial file may remain (DELETE
        /api/clips/<name>?force=1), start again.
     3. When staged == size, poll GET every 2 s until ok or failed.
-    The fan advertises a 536-byte TCP MSS (0.8.0), so no client-side
-    segment tuning is needed.
+    The fan advertises a 300-byte TCP MSS (0.9.16; 536 from 0.8.0), so
+    no client-side segment tuning is needed. Frames to the spinning
+    antenna are lost by length, and the length that still arrives moves
+    from minute to minute; 536-byte segments sat on that edge. Bench
+    2026-11-13, one 4,377,600-byte clip from a Raspberry Pi on the same
+    access point, fan in the dome: 0.9.16 146 s and 141 s with no
+    reconnects, 0.9.15 478 s with 41 reconnects. An OTA of the app image
+    took 17-30 s on 0.9.16 against 43-116 s before.
 
 Example with curl:
 

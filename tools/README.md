@@ -42,6 +42,14 @@ and `?BACKUP` pass. Changing a WCB's settings is left to you, by hand.
                         maintenance mode)
                           clip_put.py FILE http://holofan.local NAME
                           clip_put.py --abort http://holofan.local
+    linkprobe.py        measure where an upload's time goes, on the fan as
+                        it is: stages up to 800,000 bytes (below the point
+                        where the fan creates a file), aborts, and reports
+                        the rate, the fan's flash time, stalls and
+                        retransmitted bytes from the sending socket (macOS
+                        or Linux). Like any upload it overwrites the spare
+                        firmware slot.
+                          linkprobe.py http://holofan.local [--csv FILE]
     ota_fan.sh          put the fan in maintenance mode through a WCB, then
                         POST a new app image, retrying
                           WCB_HOST=<pi> [FAN=<fan-ip>] tools/bench/ota_fan.sh [image]
