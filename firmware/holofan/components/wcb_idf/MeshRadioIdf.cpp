@@ -123,6 +123,21 @@ bool MeshRadioIdf::start(const nodecfg::NodeConfig& cfg, wcb::WcbNode& node) {
     esp_now_deinit();
     return false;
   }
+  // 0.9.17: send ESP-NOW at 11 Mbps instead of ESP-IDF's 1 Mbps. The ESP's
+  // supply dips for as long as it transmits, and a 250-byte frame is on air
+  // for about 2.4 ms at 1 Mbps and 0.4 ms at 11. Bench 2026-11-13, fan in
+  // the dome, #HLFJ at 8 dBm, 20 bursts per level: at 1 Mbps 20 of 20 went
+  // under 3.10 V and up to 20 under 2.92 V; at 11 Mbps none went under
+  // 3.10 V (two runs each). Query replies heard at a WCB: 15 and 16 of 20
+  // at 1 Mbps, 20 and 19 of 20 at 11. The rate is per interface and must be
+  // set after esp_wifi_start() (esp_now.h); the call is the deprecated one
+  // because the per-peer one would need every peer and the broadcast
+  // address configured.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  err = esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_11M_L);
+#pragma GCC diagnostic pop
+  if (err != ESP_OK) ESP_LOGW(TAG, "ESP-NOW rate 11 Mbps not set (%s): sending at 1 Mbps", esp_err_to_name(err));
   s_node = &node;
   esp_now_register_recv_cb(onRecv);
   return true;

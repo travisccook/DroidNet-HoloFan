@@ -185,5 +185,16 @@ clean. `#HLFO<dd>` changes it (02-20 dBm, saved). Maintenance mode (Wi-Fi)
 always transmits at 20 dBm, so the fan plays at volume 1 while in maintenance
 and restores the volume afterwards.
 
+The supply dips for as long as a transmission lasts, so since 0.9.17 the fan
+sends its mesh frames at 11 Mbps (a WCB sends at ESP-IDF's default, 1 Mbps):
+a 250-byte frame is on air for about 0.4 ms where it was about 2.4 ms. Bench
+2026-11-13, fan in the dome at volume 3, `#HLFJ` at 8 dBm, 20 bursts per
+level: at 1 Mbps every burst took the supply under 3.10 V and up to 20 of 20
+under 2.92 V; at 11 Mbps none went under 3.10 V. Query replies heard at a
+WCB: 15 and 16 of 20 at 1 Mbps, 20, 19 and 20 of 20 at 11 Mbps. Both WCBs of
+the test droid heard the fan at 11 Mbps; other distances are untested. At
+20 dBm some bursts still dip (14 of 20 under 3.10 V, 2 of 20 under 2.76 V),
+so the 8 dBm default stays.
+
 `#HLFQ` reports the last reset reason (rst=9 is a brownout);
 docs/SERIAL_COMMANDS.md has the bench instruments.
