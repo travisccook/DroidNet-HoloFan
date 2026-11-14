@@ -209,7 +209,7 @@ void fanMcuStart() {
   s_vol = xQueueCreate(1, sizeof(VolReq));
   s_lock = xSemaphoreCreateMutex();
   s_linkLock = xSemaphoreCreateMutex();
-  xTaskCreate(mcuTask, "mcu", 6144, nullptr, 4, nullptr);
+  xTaskCreate(mcuTask, "mcu", 4608, nullptr, 4, nullptr);   // 0.9.18: was 6144; bench 2026-11-13: 3.0 KB used at most
 }
 
 bool fanMcuPost(const holofan::Cmd& c) {

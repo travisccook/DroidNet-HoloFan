@@ -464,7 +464,7 @@ bool startServer(const char* node, const char* fw) {
     ESP_LOGW(TAG, "mDNS failed to start; use the IP address");
   }
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-  cfg.stack_size = 6144;
+  cfg.stack_size = 4608;         // 0.9.18: was 6144; bench 2026-11-13: 2.5 KB used at most (uploads, a refused OTA, list, delete)
   cfg.recv_wait_timeout = RECV_TIMEOUT_S;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
   cfg.max_uri_handlers = 16;      // 3 + 5 clip routes + 4 /api/upload (the default is 8)

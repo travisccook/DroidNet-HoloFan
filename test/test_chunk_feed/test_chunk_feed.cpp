@@ -31,7 +31,7 @@ class RamFlash : public FlashIo {
 };
 
 // A feed over a RAM ring: RING_BLOCK * 5 = 640 frames (as the fan), or
-// RING_BLOCK = 128 frames (full at 125: a push needs a free sector after it).
+// RING_BLOCK = 128 frames of flash (full at 82: a push needs a free erase block after it).
 struct Rig {
   RamFlash  flash;
   FrameRing ring;
@@ -116,23 +116,23 @@ void test_feed_never_stages_past_size() {
   TEST_ASSERT_EQUAL(2, r.feed.count());
 }
 
-// 0.8.2: prefill target = capacity - one window (20 frames; 620 of 640, 108 of
-// 128) or the whole body.
+// 0.8.2: prefill target = capacity - one window (20 frames; 0.9.18: 574 of
+// 594, 62 of 82) or the whole body.
 void test_feed_prefilled_at_capacity_minus_window_or_whole_body() {
   Rig big(RING_BLOCK);
   auto d = pattern(SPI_FRAME * 200);
   big.feed.begin(d.size(), big.asmBuf);
-  big.feed.write(0, d.data(), SPI_FRAME * 107);
+  big.feed.write(0, d.data(), SPI_FRAME * 61);
   TEST_ASSERT_FALSE(big.feed.prefilled());
-  big.feed.write(SPI_FRAME * 107, d.data() + SPI_FRAME * 107, SPI_FRAME);
+  big.feed.write(SPI_FRAME * 61, d.data() + SPI_FRAME * 61, SPI_FRAME);
   TEST_ASSERT_TRUE(big.feed.prefilled());
 
-  Rig fan;                                                  // 640 frames: 620
+  Rig fan;                                                  // 594 frames: 574
   auto e = pattern(SPI_FRAME * 700);
   fan.feed.begin(e.size(), fan.asmBuf);
-  fan.feed.write(0, e.data(), SPI_FRAME * 619);
+  fan.feed.write(0, e.data(), SPI_FRAME * 573);
   TEST_ASSERT_FALSE(fan.feed.prefilled());
-  fan.feed.write(SPI_FRAME * 619, e.data() + SPI_FRAME * 619, SPI_FRAME);
+  fan.feed.write(SPI_FRAME * 573, e.data() + SPI_FRAME * 573, SPI_FRAME);
   TEST_ASSERT_TRUE(fan.feed.prefilled());
 
   Rig small;
@@ -151,8 +151,8 @@ void test_feed_write_stops_when_ring_full_and_resumes_after_pop() {
   r.feed.begin(d.size(), r.asmBuf);
   size_t used = r.feed.write(0, d.data(), d.size());
   TEST_ASSERT_TRUE(r.feed.full());
-  TEST_ASSERT_EQUAL(125, r.feed.count());
-  TEST_ASSERT_EQUAL(SPI_FRAME * 125, used);
+  TEST_ASSERT_EQUAL(82, r.feed.count());
+  TEST_ASSERT_EQUAL(SPI_FRAME * 82, used);
   TEST_ASSERT_EQUAL(used, r.feed.staged());
   uint8_t f[SPI_FRAME];
   TEST_ASSERT_TRUE(r.feed.pop(f));
@@ -260,7 +260,7 @@ void test_feed_dry_limit_is_per_session() {
 }
 
 void test_feed_prefill_override_and_clamp() {
-  Rig r;                                                    // 640 frames: default prefill 620
+  Rig r;                                                    // 594 frames: default prefill 574
   auto d = pattern(SPI_FRAME * 700);
   r.feed.begin(d.size(), r.asmBuf, 20);
   r.feed.write(0, d.data(), SPI_FRAME * 19);
@@ -269,13 +269,13 @@ void test_feed_prefill_override_and_clamp() {
   TEST_ASSERT_TRUE(r.feed.prefilled());
   Rig a;
   a.feed.begin(d.size(), a.asmBuf, 1000);                   // clamped to capacity - 20
-  a.feed.write(0, d.data(), SPI_FRAME * 619);
+  a.feed.write(0, d.data(), SPI_FRAME * 573);
   TEST_ASSERT_FALSE(a.feed.prefilled());
-  a.feed.write(SPI_FRAME * 619, d.data() + SPI_FRAME * 619, SPI_FRAME);
+  a.feed.write(SPI_FRAME * 573, d.data() + SPI_FRAME * 573, SPI_FRAME);
   TEST_ASSERT_TRUE(a.feed.prefilled());
   Rig b;
   b.feed.begin(d.size(), b.asmBuf, 0);                      // 0 = capacity - 20
-  b.feed.write(0, d.data(), SPI_FRAME * 619);
+  b.feed.write(0, d.data(), SPI_FRAME * 573);
   TEST_ASSERT_FALSE(b.feed.prefilled());
 }
 
@@ -291,7 +291,7 @@ void test_feed_prefill_default_never_below_one() {
   feed.begin(d.size(), asmBuf, 0);
   TEST_ASSERT_TRUE(ring.capacity() > 20);                   // sanity: the real ring is bigger
   feed.write(0, d.data(), SPI_FRAME);
-  TEST_ASSERT_FALSE(feed.prefilled());                      // 107 wanted, whole body not in
+  TEST_ASSERT_FALSE(feed.prefilled());                      // 62 wanted, whole body not in
 }
 
 // stg: bytes staged by the first pop / ms from begin() to it.

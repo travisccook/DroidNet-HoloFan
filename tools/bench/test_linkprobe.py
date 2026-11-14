@@ -121,7 +121,7 @@ class ProbeTest(unittest.TestCase):
         sess = self.srv.fan.sess
         self.assertEqual(rep["bytes"], linkprobe.MAX_BYTES)                 # capped: never a real upload
         self.assertEqual(len(sess["buf"]), linkprobe.MAX_BYTES)
-        self.assertLess(linkprobe.MAX_BYTES // linkprobe.SPI_FRAME, 620)     # below the fan's prefill
+        self.assertLess(linkprobe.MAX_BYTES // linkprobe.SPI_FRAME, 574)     # below the fan's prefill
         self.assertGreater(sess["size"], linkprobe.MAX_BYTES)               # the body never completes
         self.assertEqual((sess["state"], sess["err"]), ("failed", "abort"))
         linkprobe.report(rep, log=lines.append)

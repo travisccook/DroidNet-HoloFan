@@ -25,7 +25,7 @@ class ChunkFeed {
   // A new session of `size` clip bytes. The ring must be begun (empty);
   // `asmBuf` holds SPI_FRAME bytes (the frame being assembled).
   // prefilled() at `prefillFrames` buffered (0 = the ring's capacity minus
-  // one window, 620 frames on the fan, so the create phase has a window of
+  // one window, 574 frames on the fan, so the create phase has a window of
   // headroom; clamped to [1, capacity - SPI_WINDOW_FRAMES]) or when the whole
   // body is in. `dryMs`: the dry rule's limit.
   void begin(size_t size, uint8_t* asmBuf, size_t prefillFrames = 0, uint32_t dryMs = DRY_MS);

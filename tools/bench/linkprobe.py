@@ -7,7 +7,7 @@ Usage: linkprobe.py BASE_URL [--bytes 700000] [--chunk 32768] [--name 09-Probe.b
   address: a .local lookup costs 5 s on macOS)
 
 What it does: opens a resumable upload session for a clip larger than what it
-sends, stages --bytes of zeros (at most 800,000: below the 620-frame prefill,
+sends, stages --bytes of zeros (at most 800,000: below the 574-frame prefill,
 so the fan never creates a file and never sends a frame to its LED/SD
 controller), aborts the session and reads the fan's "last" line. Like every
 upload it overwrites the spare OTA slot (the fan's previous firmware image).
@@ -39,7 +39,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import clip_put  # noqa: E402
 
-MAX_BYTES = 800_000            # 555 frames: below the fan's 620-frame prefill
+MAX_BYTES = 800_000            # 555 frames: below the fan's 574-frame prefill
 SPI_FRAME = 1440
 SAMPLE_S = 0.02
 STUCK_S = 1.0

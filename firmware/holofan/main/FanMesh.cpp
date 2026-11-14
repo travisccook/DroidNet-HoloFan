@@ -663,7 +663,7 @@ void fanMeshStart() {
   fanMcuPost(holofan::Cmd(holofan::CmdType::BLUETOOTH, configstore::loadBluetooth() ? 1 : 0));
   s_wifiOk = MeshRadioIdf::initWifi();
   s_maintOk = s_wifiOk && maintidf::init();
-  xTaskCreate(meshTask, "mesh", 6144, nullptr, 6, nullptr);
+  xTaskCreate(meshTask, "mesh", 4608, nullptr, 6, nullptr);   // 0.9.18: was 6144; bench 2026-11-13: 2.5 KB used at most
 }
 
 void fanMeshConsoleLine(const char* line) {

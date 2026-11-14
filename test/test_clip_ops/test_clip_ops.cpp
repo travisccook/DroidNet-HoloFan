@@ -1056,7 +1056,7 @@ void test_reserve_slow_client_windows_every_keep_never_partial() {
   FakeLink l; FakeSpi s; FakeLease lease(l, s);
   l.lists = {""};
   l.expects = {0, 0};
-  SessionRig rig(RING_BLOCK, SPI_FRAME * 300, 20, 4000);
+  SessionRig rig(RING_BLOCK * 2, SPI_FRAME * 300, 20, 4000);   // 210 frames (0.9.18: one block held 125, now 82)
   UploadResult r = rig.run(lease, reserve());
   TEST_ASSERT_EQUAL(ClipErr::OK, r.err);
   TEST_ASSERT_EQUAL(300, s.frames);

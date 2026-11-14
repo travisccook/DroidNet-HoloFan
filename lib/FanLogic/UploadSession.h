@@ -25,7 +25,7 @@ constexpr uint32_t SESSION_DRY_MS = 30000;   // a burst session's default dry li
 // 0.8.2: a reserve session fails fast: the MCU aborts after ~3-5 s of SPI
 // silence, so waiting longer than this for the body only wastes the file.
 constexpr uint32_t SESSION_RESERVE_DRY_MS = 4000;
-constexpr size_t   SESSION_PRE_MAX = 617;    // the fan's ring (637 frames) minus one window
+constexpr size_t   SESSION_PRE_MAX = 617;    // accepted limit; ChunkFeed clamps to the ring minus one window (574 since 0.9.18)
 inline PaceConfig reservePace() {
   PaceConfig p;
   p.pace = Pace::RESERVE;

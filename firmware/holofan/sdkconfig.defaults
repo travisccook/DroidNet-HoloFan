@@ -57,3 +57,9 @@ CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
 # a burst (must be >= the static count, Kconfig help).
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=10
+
+# 0.9.18: task stacks cut to what the bench shows they need plus 1.5 KB or
+# more (mcu, mesh and httpd 6144 -> 4608, upload 4096 -> 3584 in the code;
+# mDNS 4096 -> 3072 here; it used 1.0 KB). Bench 2026-11-13: the lowest free
+# heap during a clip upload rose from about 2 KB to about 9 KB.
+CONFIG_MDNS_TASK_STACK_SIZE=3072

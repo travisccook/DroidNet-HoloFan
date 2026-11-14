@@ -182,7 +182,8 @@ There is no idle timeout.
 
 ## Resumable upload (HoloFan 0.8.0)
 
-For links that drop. The fan buffers up to 921,600 bytes of the clip in
+For links that drop. The fan buffers up to 855,360 bytes of the clip (594
+frames; 0.9.18) in
 flash and keeps feeding its LED/SD controller from that buffer while the
 client reconnects. One session at a time.
 
@@ -194,7 +195,7 @@ client reconnects. One session at a time.
     pace.
 
     Pacing (0.8.2): the default pace is reserve. Before sending starts the
-    fan buffers the ring minus one window (620 frames, about 890 KB; knob
+    fan buffers the ring minus one window (574 frames, about 827 KB; knob
     pre) and then creates the file. While the body is still arriving it
     sends a window (20 frames back to back) only when 20 frames are
     buffered AND (the ring is full OR keep ms (default 3000) have passed
@@ -256,8 +257,8 @@ client reconnects. One session at a time.
                    and the next window's first unless the ring is full.
              igap  0..60000 ms (default 0; must be below dry): least time between one window's
                    last frame and the next window's first (burst only).
-             pre   20..617 frames (default 0 = 620, the ring minus one
-                   window): buffered before the file is created and
+             pre   20..617 frames (default 0 = 574, the ring minus one
+                   window; more counts as 574 since 0.9.18): buffered before the file is created and
                    sending starts.
              dry   1000..600000 ms (default 4000 for reserve, 30000 for
                    burst): the session fails
@@ -345,6 +346,12 @@ client reconnects. One session at a time.
     access point, fan in the dome: 0.9.16 146 s and 141 s with no
     reconnects, 0.9.15 478 s with 41 reconnects. An OTA of the app image
     took 17-30 s on 0.9.16 against 43-116 s before.
+    0.9.18 erases the buffer's flash in 64 KB blocks while nothing is in
+    flight (when the session opens, and after each window has gone to the
+    controller) instead of in 4 KB sectors as the data arrives. Same
+    bench, runs alternated on one build: 95-123 s with block erases
+    (5 runs), 152-174 s with sector erases (7 runs). Opening a session
+    takes up to about 1.4 s longer.
 
 Example with curl:
 

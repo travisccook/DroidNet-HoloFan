@@ -25,7 +25,7 @@ using fanlogic::ClipErr;
 using fanlogic::SPI_FRAME;
 
 const char* TAG = "upload";
-constexpr uint32_t    UPLOAD_STACK = 4096;   // bytes (StackType_t is uint8_t on the C2); bench HWM ~2.1 KB used (D13)
+constexpr uint32_t    UPLOAD_STACK = 3584;   // bytes (StackType_t is uint8_t on the C2); bench HWM ~2.1 KB used (D13); 4096 before 0.9.18
 constexpr UBaseType_t UPLOAD_PRIO = 4;         // below httpd (5), as the MCU task
 constexpr uint32_t    RSSI_EVERY_MS = 1000;
 
@@ -69,6 +69,7 @@ Session             s_sess;
 std::atomic<bool>   s_active{false};           // prefill or sending (read by the mesh task)
 PartitionFlash      s_flash;
 fanlogic::FrameRing s_ring(s_flash);
+uint32_t            s_erasedAtPop = 0;         // s_ring.popped() at the last eraseAhead(); guarded by s_mu
 EspClock            s_clock;
 fanlogic::ChunkFeed s_feed(s_ring, s_clock);
 uint8_t*            s_work = nullptr;          // 2 frames, DMA: [0] the feed's assembly buffer, [1] uploadClip's frame
@@ -284,7 +285,12 @@ esp_err_t handleOpen(httpd_req_t* r) {
   {
     Lock l;
     s_flash.use(part);
+    s_erasedAtPop = 0;
     ringOk = s_ring.begin();
+    // 0.9.18: no clip data is in flight while the session opens, so erase
+    // what the prefill will use now, in 64 KB blocks (the whole ring takes
+    // about 1.4 s), instead of by sectors as the data arrives.
+    if (ringOk) ringOk = s_ring.eraseAhead(uq.size) >= 0;
     if (ringOk) {
       s_work = work;
       s_feed.begin(uq.size, s_work, uq.pre, uq.dryMs);
@@ -388,6 +394,17 @@ esp_err_t handleChunk(httpd_req_t* r) {
       xSemaphoreTake(s_gate, portMAX_DELAY);                // not while a window is on the wire
       {
         Lock l;
+        // 0.9.18: a window has gone to the MCU since the last write. This
+        // task waited at the gate for it without reading the socket, so the
+        // client's TCP window (2440 bytes) is shut and nothing is in flight:
+        // the moment for a block erase. Bench 2026-11-13: a 95 ms erase with
+        // segments in flight was followed by a retransmit timeout (9 per 11
+        // erases) and uploads got slower; erased here, one 4,377,600-byte
+        // clip took 95-123 s where sector erases took 152-174 s.
+        if (s_ring.popped() - s_erasedAtPop >= (uint32_t)fanlogic::SPI_WINDOW_FRAMES) {
+          s_ring.eraseAhead(fanlogic::SPI_WINDOW + fanlogic::SPI_FRAME);
+          s_erasedAtPop = s_ring.popped();
+        }
         used = s_feed.write(pos, s_rx + done, (size_t)n - done);
         over = s_feed.state() == BodyState::FAILED || !activeLocked();
       }
