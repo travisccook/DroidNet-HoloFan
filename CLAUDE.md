@@ -40,6 +40,8 @@ write commands against hardware from an automated session.
     test/               native Unity suites
     tools/              clip generator, bench tools, UART bridge sketch,
                         check_private.py (pre-commit leak scan)
+    release/            the built firmware of the last release and its
+                        manifest.json
     docs/               HOW_IT_WORKS, SERIAL_COMMANDS, MAINTENANCE_API,
                         WCB_MESH_NOTES, HOLOFAN_IR_CODES, images/
 

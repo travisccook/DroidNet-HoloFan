@@ -377,10 +377,17 @@ does this with `#HLF1` / `#HLF0`) or your own switch.
 **Maintenance mode** (Signal Booster's Sync uses it for clips; you need it
 yourself for firmware updates): send `#HLZX1` (Wi-Fi profile 1), or
 power-cycle the fan three times in a row, each time on for 2 to 10 s. The
-fan leaves the mesh, joins your Wi-Fi and answers at http://holofan.local:
+fan leaves the mesh, joins your Wi-Fi and answers at http://holofan.local.
+
+**Keep a WCB switched on and in range while you update.** The new image must
+hear the mesh within 30 s of booting, or the fan rolls back to the previous
+image.
 
     curl -X POST -H 'Content-Type: application/octet-stream' \
-         --data-binary @firmware/holofan/build/holofan.bin http://holofan.local/api/ota
+         --data-binary @release/holofan.bin http://holofan.local/api/ota
+
+release/holofan.bin is the built image of the version in
+release/manifest.json; your own build is firmware/holofan/build/holofan.bin.
 
 A new image must reach the mesh within 30 s of booting, or the fan goes back
 to the previous one by itself. Since 0.9.19 "reach" means it received a

@@ -135,6 +135,10 @@ off the mesh until a power cycle. (Not yet tried on a node.)
                NOT a merged image with bootloader); Content-Length required;
                Content-Type must not be multipart (use application/octet-stream)
          200 {"ok":true}            image verified and staged; the node reboots
+         A WCB must be switched on and in range for the reboot that
+         follows: the new image has to receive a mesh frame within 30 s, or
+         the node rolls back ("After an OTA" below). A program that sends an
+         update should say so to its user first.
          400 {"ok":false,"err":"length"}
          500 {"ok":false,"err":"<reason>"}   nothing changed, still serving
 
@@ -433,6 +437,8 @@ Example with curl:
     python3 tools/bench/clip_put.py --abort http://holofan.local
 
 ## After an OTA: automatic rollback
+
+Keep a WCB switched on and in range for every update.
 
 The new image boots in the bootloader's PENDING_VERIFY state. It keeps
 itself only if, within 30 s, it reaches the mesh: it must receive a frame

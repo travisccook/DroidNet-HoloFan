@@ -75,6 +75,11 @@ only.)
 
 ## Update over Wi-Fi
 
+Keep a WCB switched on and in range: the new image must receive a mesh frame
+within 30 s of booting, or the fan rolls back. The image of the last release
+is ../../release/holofan.bin (release/manifest.json has its version and
+SHA-256).
+
     curl -X POST -H 'Content-Type: application/octet-stream' \
          --data-binary @build/holofan.bin http://holofan.local/api/ota
 
