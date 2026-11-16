@@ -1,5 +1,5 @@
 // A FIFO of 1440-byte SPI frames in a flash region (on the fan: the spare
-// OTA slot), so a clip upload can buffer ~900 KB ahead of the MCU and ride
+// OTA slot), so a clip upload can buffer about 855 KB ahead of the MCU and ride
 // out Wi-Fi stalls. Pure C++ over FlashIo, so
 // the native env tests it with a fake flash.
 //

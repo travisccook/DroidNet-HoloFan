@@ -19,7 +19,11 @@ machine:
                     HOST as the first argument (without .local; they add it)
 
 hfbench.py refuses WCB setters (`?X,<value>`): only the read-only `?WDP,DUMP`
-and `?BACKUP` pass. Changing a WCB's settings is left to you, by hand.
+and `?BACKUP` pass. It also refuses whatever a WCB would read as a second
+command: a line holding the chain delimiter `^`, CR, LF or another control
+character, a `;` command other than `;w<node>,<payload>`, and a payload that
+starts with `;` or `?`. This assumes the WCB's default command characters.
+Changing a WCB's settings is left to you, by hand.
 
 ## Clips (tools/holofan_clip)
 
@@ -28,7 +32,11 @@ and `?BACKUP` pass. Changing a WCB's settings is left to you, by hand.
                           clipgen.py clip --geom 64x520x6 --seconds 3 --video rings --audio tone:440 out.bin
                           clipgen.py inspect --geom 64x520x6 clip.bin
                           clipgen.py crc file.bin
-    make_test_clip.py   the smallest playable clip from a header file
+    make_test_clip.py   a small black, silent 64x520x6 clip from a header
+                        file: 30 frames (1.5 s) unless you ask for more. Fewer
+                        are refused without --allow-unlisted, because the fan
+                        never lists such a clip and only formatting the card
+                        removes it (docs/HOW_IT_WORKS.md, section 4)
                           make_test_clip.py <ee37-header.bin> <out.bin> [frames]
     pipeline_sim.cpp    offline simulation of the upload path (lib/FanLogic)
                           c++ -std=c++17 -O2 -I lib/FanLogic -I lib/HolofanProtocol \
@@ -82,6 +90,16 @@ ffmpeg (or afconvert on macOS); av_offset.py needs ffmpeg, numpy and scipy.
 holofan_uart_bridge.ino turns a SparkFun RedBoard Artemis into a 3.3 V
 USB-serial passthrough for the fan's header. Any 3.3 V USB-serial adapter
 does the same job (README.md, "Connecting the fan").
+
+## Private-data check (tools/check_private.py)
+
+    tools/install_hooks.sh                    once per clone: git then runs the
+                                              check before every commit
+    python3 tools/check_private.py            the whole repository
+    python3 tools/check_private.py --staged   what is staged (what the hook runs)
+
+tools/githooks/pre-commit is the hook; install_hooks.sh points git's
+core.hooksPath at that directory.
 
 ## Tests
 

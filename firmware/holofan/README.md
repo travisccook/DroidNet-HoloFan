@@ -42,7 +42,11 @@ firmware used; README.md, "Building"). IDF_PATH defaults to ~/esp/esp-idf;
 set IDF_TOOLS_PATH if your ESP-IDF tools are not in ~/.espressif. build.sh
 warns when ESP-IDF is at another commit, checks that the image fits an OTA
 slot (960 KiB) and that the shared mesh core makes no libatomic calls (the
-ESP32-C2 has no atomic instructions).
+ESP32-C2 has no atomic instructions); it fails if that check cannot run.
+
+sdkconfig is generated from sdkconfig.defaults only when it does not exist.
+build.sh warns when sdkconfig.defaults is newer than sdkconfig: delete
+sdkconfig and build again to apply the changed defaults.
 
 ## First wired flash
 
@@ -57,9 +61,12 @@ and ESP-IDF's environment loaded (`. $IDF_PATH/export.sh`):
 
 flash_first.sh and restore_stock.sh refuse unless <backup-dir> holds a
 verified backup of the chip on <port>, and so does flash.sh <port>
-<backup-dir>. NVS is never written. flash.sh (app only, into ota_0) is for
-recovery: after an OTA the fan may be booting
-ota_1, so prefer an OTA.
+<backup-dir>. No command erases the flash. backup_stock.sh only reads.
+flash_first.sh and flash.sh never erase or write the nvs partition
+(0x9000-0xEFFF); fanflash.py refuses an image too large for its region.
+restore_stock.sh writes the chip's own 2 MB backup back, NVS included: that
+is what restoring stock means. flash.sh (app only, into ota_0) is for
+recovery: after an OTA the fan may be booting ota_1, so prefer an OTA.
 
 ## Update over Wi-Fi
 

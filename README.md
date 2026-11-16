@@ -324,8 +324,8 @@ about three actions a second: the fan's controller needs time between them.
 Playback:
 
     #HLFG<n>        play clip n of the clip list (1-based, the order of #HLFD)
-    #HLFT<NN>       play the clip whose name starts with NN- (0-99), e.g.
-                    #HLFT03 for 03-Stars.bin
+    #HLFT<NN>       play the clip whose name starts with NN- or NN_ (0-99),
+                    e.g. #HLFT03 for 03-Stars.bin
     #HLFP           pause
     #HLFN / #HLFR   next / previous clip
     #HLFL<O|A>      loop one clip / loop all

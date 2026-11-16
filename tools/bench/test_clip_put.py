@@ -3,6 +3,8 @@
 docs/MAINTENANCE_API.md) with injected faults. Run:
     python3 -B -m unittest discover -s tools/bench -p 'test_clip_put.py'
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -225,6 +227,46 @@ class ClipPutTest(unittest.TestCase):
         fan = clip_put.Fan(self.base, timeout=5.0)
         self.assertEqual(0, clip_put.abort(fan, log=self.lines.append, sleep=lambda s: None))
         self.assertEqual("failed", self.fan.sess["state"])
+
+
+
+class ArgumentTest(unittest.TestCase):
+    def parse(self, *extra):
+        return clip_put.build_parser().parse_args(["f.bin", "http://fan", "01-A.bin", *extra])
+
+    def refused(self, *extra):
+        with self.assertRaises(SystemExit) as c, contextlib.redirect_stderr(io.StringIO()):
+            self.parse(*extra)
+        self.assertEqual(c.exception.code, 2)
+
+    def test_chunk_must_be_positive(self):
+        # 0 or a negative chunk never made progress: it looped until --giveup
+        self.assertEqual(self.parse().chunk, 32768)
+        self.assertEqual(self.parse("--chunk", "1").chunk, 1)
+        for bad in ("0", "-1", "-32768", "x"):
+            self.refused("--chunk", bad)
+
+    def test_upload_refuses_a_chunk_that_cannot_progress_before_any_request(self):
+        class NoFan:
+            def call(self, *a, **k):
+                raise AssertionError("a request was made")
+
+            def close(self):
+                pass
+        for chunk in (0, -5):
+            with self.assertRaises(ValueError):
+                clip_put.upload(NoFan(), b"x" * 100, "01-A.bin", chunk=chunk, log=lambda x: None)
+
+    def test_pre_is_limited_to_what_the_fan_takes(self):
+        # lib/FanLogic/UploadSession.h: SESSION_PRE_MAX = (5 * 184320 - 65536) / 1440 - 20
+        self.assertEqual(clip_put.PRE_MAX, (5 * 184320 - 65536) // 1440 - 20)
+        self.assertEqual(clip_put.PRE_MAX, 574)
+        self.assertIsNone(self.parse().pre)
+        self.assertEqual(self.parse("--pre", "20").pre, 20)
+        self.assertEqual(self.parse("--pre", "574").pre, 574)
+        for bad in ("19", "0", "-1", "575", "617"):
+            self.refused("--pre", bad)
+        self.assertIn("20..574", clip_put.build_parser().format_help())
 
 
 if __name__ == "__main__":

@@ -68,3 +68,7 @@ Desktop.ini
 serial_output.txt
 __pycache__/
 firmware/holofan/.cache/
+
+# Backups of a fan's flash (firmware/holofan/fanflash.py backup): private, never commit
+stock-*.bin
+stock-*.json

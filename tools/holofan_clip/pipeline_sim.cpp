@@ -10,10 +10,11 @@
 // prints PUT lines for the body mode runs, and session mode lines with frame
 // counts, error, body end, worst gap, dup bytes, outage/kill details, and ring min.
 // 0.8.2: the session scenarios use the session defaults (reserve pace, keep
-// 2500, pre = ring minus one window, dry 4000) at 20 KB/s: the 30 s outage
-// and the 60 s kill-resume are OK (byte-exact, crc right, igmax <= keep + 200
-// ms), the 3 min and 12 min outages end err=recv end=d (the reserve covers
-// ~31 windows x 2.5 s ~ 78 s), and "slow-link" (6 KB/s, no outage; below the
+// 3000 = KEEP_DEFAULT_MS, pre = ring minus one window = SESSION_PRE_MAX, dry
+// 4000) at 20 KB/s: the 30 s outage and the 60 s kill-resume are OK
+// (byte-exact, crc right, igmax <= keep + 200 ms), the 3 min and 12 min
+// outages end err=recv end=d (computed: the full ring holds 594 frames = 29
+// whole windows, x 3 s ~ 87 s of reserve), and "slow-link" (6 KB/s, no outage; below the
 // MCU's ~11.5 KB/s once the reserve drains) must end recv d: it prints where.
 // 0.8.1: the session scenarios ran BURST (windows back to back, a whole
 // window buffered first) with pre 320, igap 0 and the dry limit given per

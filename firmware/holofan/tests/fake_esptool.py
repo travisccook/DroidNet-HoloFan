@@ -5,6 +5,8 @@ to $FAKE_LOG) and behaves per env:
   FAKE_EFUSE (JSON object merged over a good C2 summary), FAKE_FAIL (a
   subcommand that exits 2), FAKE_FAIL_NTH (fail only that call number of
   FAKE_FAIL, 1-based), FAKE_UNSTABLE=1 (the second read_flash differs).
+A command line without one of the subcommands below always exits 2: the
+fake does not pretend to know what an erase, or anything else, would do.
 Never touches a serial port."""
 import json
 import os
@@ -17,6 +19,9 @@ if log:
         f.write(json.dumps(argv) + "\n")
 SUBS = ("read_mac", "flash_id", "read_flash", "write_flash", "summary", "chip_id")
 sub = next((a for a in argv if a in SUBS), None)
+if sub is None:
+    print(f"fake_esptool: no known subcommand in {argv}")
+    sys.exit(2)
 state = (log or "/dev/null") + ".count"
 counts = {}
 if log and os.path.exists(state):

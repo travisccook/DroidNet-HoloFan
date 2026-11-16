@@ -115,8 +115,9 @@ select on GPIO0 plus the manual one on GPIO10. An upload is:
 
 The MCU aborts a transfer when data stops for roughly 2.6 to 5 s. Wi-Fi from
 inside a droid can stall for longer, so the firmware never streams straight
-from the network: it stages the clip in the spare OTA partition (about
-900 KB ahead of the MCU) and paces the SPI side from there
+from the network: it stages the clip in the spare OTA partition (up to
+855,360 bytes, 594 frames, ahead of the MCU; computed from the ring's size)
+and paces the SPI side from there
 (docs/MAINTENANCE_API.md, "Resumable upload").
 
 Clip names are `NN-<name>.bin` (NN = a slot number, 0-99, for #HLFT). Clips
@@ -165,9 +166,11 @@ this table:
     ota_1     0x100000  0x0F0000
     otadata   0x1F0000  0x002000
 
-NVS is never erased or written by the flasher. It holds the chip's RF
-calibration and the stock firmware's own data, which the stock firmware
-needs again if you ever restore it. This firmware keeps its settings in its
+The flasher never erases the flash. Its backup only reads; its first flash
+and its app-only recovery flash never erase or write NVS. Its restore writes
+the chip's own 2 MB backup back, and with it the NVS contents that backup
+holds. NVS holds the chip's RF calibration and the stock firmware's own
+data, which the stock firmware needs again if you ever restore it. This firmware keeps its settings in its
 own namespace, "hlmesh", and does not let the Wi-Fi driver store anything in
 NVS.
 

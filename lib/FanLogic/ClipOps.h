@@ -237,7 +237,7 @@ class FrameSource {
   virtual char bodyEnd() = 0;            // diagnostics: '-', 'e', 's', 'd', 'a', 'f'
   // uploadClip brackets every 20-frame window, from before its first pop to
   // the end of its GPIO18 wait. A source with a concurrent producer pauses
-  // its flash writes in between: an erase freezes the chip for ~40 ms and
+  // its flash writes in between: an erase freezes the chip for ~40 ms (a 4 KB sector; a 64 KB block ~95 ms) and
   // can swallow the MCU's ~50 us LOW ack pulse (bench 2026-10-07, 0.8.6:
   // "get packet #1" logged but low=0). Default: nothing.
   virtual void windowBegin() {}

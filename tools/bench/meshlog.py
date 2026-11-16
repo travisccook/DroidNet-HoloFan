@@ -5,8 +5,9 @@ import asyncio, json, sys, time, websockets
 host, path = sys.argv[1], sys.argv[2]
 WS = f"ws://{host}.local:8080/api/serial/ws?port=/dev/ttyUSB0&baud=115200&readonly=true"
 def log(s):
+    t = time.time()                        # one clock read for the seconds and the milliseconds
     with open(path, "a") as f:
-        f.write(time.strftime("%H:%M:%S") + f".{int(time.time()*1000)%1000:03d} " + s + "\n")
+        f.write(time.strftime("%H:%M:%S", time.localtime(t)) + f".{int(t * 1000) % 1000:03d} " + s + "\n")
 async def main():
     while True:
         try:

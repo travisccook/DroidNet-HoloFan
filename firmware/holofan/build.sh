@@ -19,6 +19,14 @@ esac
 # shellcheck disable=SC1091
 source "$IDF_PATH/export.sh" >/dev/null 2>&1 || { echo "export.sh failed (check IDF_PATH / IDF_TOOLS_PATH)"; exit 2; }
 cd "$HERE"
+# sdkconfig (not committed) is made from sdkconfig.defaults only when it does
+# not exist; afterwards a change to sdkconfig.defaults is silently ignored.
+if [ -f sdkconfig ] && [ sdkconfig.defaults -nt sdkconfig ]; then
+  echo "WARNING: sdkconfig.defaults is newer than sdkconfig, so this build does NOT use the"
+  echo "WARNING: changed defaults. To apply them: rm $HERE/sdkconfig && ./build.sh"
+  echo "WARNING: (that also drops any setting made by hand in menuconfig)."
+  STALE_SDKCONFIG=1
+fi
 [ -f sdkconfig ] || idf.py set-target esp32c2 >/dev/null
 idf.py build
 
@@ -28,7 +36,16 @@ SLOT_MAX=$((0xF0000))            # partitions.csv: two OTA slots in 2 MB after 0
 echo "image: $BIN  $SIZE bytes (OTA slot budget $SLOT_MAX)"
 [ "$SIZE" -le "$SLOT_MAX" ] || { echo "FAIL: image too large for an OTA slot"; exit 3; }
 
-ATOMIC=$(riscv32-esp-elf-nm -u build/esp-idf/wcbcore/libwcbcore.a | grep -c '__atomic_' || true)
+LIB=build/esp-idf/wcbcore/libwcbcore.a
+[ -f "$LIB" ] || { echo "FAIL: $LIB is missing, so the libatomic check cannot run"; exit 4; }
+# nm's own status decides, not grep's: a missing or failing nm must not read as "0 calls".
+SYMS=$(riscv32-esp-elf-nm -u "$LIB") || { echo "FAIL: riscv32-esp-elf-nm did not run on $LIB, so the libatomic check cannot run"; exit 4; }
+[ -n "$SYMS" ] || { echo "FAIL: riscv32-esp-elf-nm listed no symbols in $LIB, so the libatomic check cannot run"; exit 4; }
+ATOMIC=$(printf '%s\n' "$SYMS" | grep -c '__atomic_' || true)
 echo "libatomic calls in wcbcore: $ATOMIC"
-[ "$ATOMIC" -eq 0 ] || { riscv32-esp-elf-nm -u build/esp-idf/wcbcore/libwcbcore.a | grep '__atomic_'; echo "FAIL: libatomic calls"; exit 4; }
-echo "BUILD OK"
+[ "$ATOMIC" -eq 0 ] || { printf '%s\n' "$SYMS" | grep '__atomic_'; echo "FAIL: libatomic calls"; exit 4; }
+if [ -n "${STALE_SDKCONFIG:-}" ]; then
+  echo "BUILD OK, but with a sdkconfig older than sdkconfig.defaults (see the WARNING above)"
+else
+  echo "BUILD OK"
+fi

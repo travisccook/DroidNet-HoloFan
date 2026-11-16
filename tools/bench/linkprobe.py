@@ -33,7 +33,6 @@ import struct
 import sys
 import threading
 import time
-from urllib.parse import urlencode
 
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -168,9 +167,11 @@ def probe(fan, nbytes, name, chunk=32768, log=print, now=time.monotonic, sleep=t
         log("the fan did not answer GET /api/info (is it in maintenance mode?)")
         return None, []
     log(f"fan {info.get('fw')} heap {info.get('heap')} wifi {json.dumps(info.get('wifi'))}")
-    st, js = fan.call("POST", "/api/upload?" + urlencode({"name": name, "size": size}))
-    if st != 200 or js is None:
-        log(f"open refused: {st} {json.dumps(js)}")
+    # The open can take about as long as the socket timeout, so one POST is not
+    # enough: retry it as clip_put.py does (it is idempotent).
+    opened = now()
+    js = clip_put.open_session(fan, {"name": name, "size": size}, lambda: now() - opened > giveup, sleep, log)
+    if js is None:
         return None, []
     sid, staged = js["id"], js["staged"]
     data = bytes(chunk)
@@ -254,8 +255,8 @@ def write_csv(path, samples, t0):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("base_url")
-    ap.add_argument("--bytes", type=int, default=700_000)
-    ap.add_argument("--chunk", type=int, default=32768)
+    ap.add_argument("--bytes", type=clip_put.positive, default=700_000)
+    ap.add_argument("--chunk", type=clip_put.positive, default=32768)
     ap.add_argument("--name", default="09-Probe.bin")
     ap.add_argument("--csv")
     ap.add_argument("--timeout", type=float, default=5.0)

@@ -534,10 +534,10 @@ CANDIDATES = tuple(Candidate(n, parse_geometry(g), hz) for n, g, hz in (
     (5, "64x520x6:32", 1300),  # F-S12 in 32-byte planes 101,440 B
     (6, "116x520x6", 1500),    # app fallback, F1       138,880 B
 ))
-# The strides this fan most likely plays: 85x400x6, the PRO+ format of SW130
-# (expected), and 64x520x6, the F-S12 the MCU reports. "clip" gives a clip's
-# length at both, since a clip that is short at the fan's stride may go
-# unlisted (LISTED_SECONDS).
+# The two strides "clip" reports a clip's length at: 85x400x6, the PRO+
+# (F-S12+) format of SW130, and 64x520x6, the Atom PRO's (F-S12), which is
+# what our fan plays (tested; docs/HOW_IT_WORKS.md, section 5). A clip that is
+# short at the fan's stride may go unlisted (LISTED_SECONDS).
 FAN_STRIDES = (parse_geometry("85x400x6"), parse_geometry("64x520x6"))
 PROBE_WINDOWS = 120
 # the probe must hold one frame of every candidate (5 windows)
@@ -682,7 +682,13 @@ def png_bytes(width, height, rows):
 
 def render_png(geom, video, scale=None):
     """One frame's video as a disc: rim outside, line 0 at 12 o'clock,
-    lines increasing clockwise, one LED = ``scale`` pixels of radius."""
+    lines increasing clockwise, one LED = ``scale`` pixels of radius.
+
+    That is the preview's own layout, not the picture on the fan. On our
+    64x520x6 fan line 0 points to 3 o'clock and the lines run
+    counter-clockwise (tested with a spokes clip; docs/HOW_IT_WORKS.md,
+    section 5), so the fan shows the preview mirrored left-right and then
+    turned a quarter turn clockwise."""
     top = geom.max_level
     rgb = [bytes(v * 255 // top for led in line for v in led)
            for line in decode_video(geom, video)]
@@ -769,7 +775,7 @@ def _cmd_clip(args):
     print(f"  frames {frames}, seconds {frames / FPS:.2f}, size {len(data):,} B "
           f"= {len(data) // WINDOW_BYTES} windows")
     print(f"  crc32 {crc32_padded(data):08x}")
-    print("  read with the fan's likely strides (PRO+ expected, F-S12 reported):")
+    print("  read at the two known strides (64x520x6 is the Atom PRO's, tested; 85x400x6 the PRO+'s):")
     shortest = frames / FPS
     for g in FAN_STRIDES:
         n = frames_in(g, len(data))
@@ -871,7 +877,9 @@ def _cmd_inspect(args):
         start = geom.frame_offset(n)
         with open(args.png[1], "wb") as f:
             f.write(render_png(geom, data[start:start + geom.video_bytes]))
-        print(f"  wrote {args.png[1]}: frame {n}, B,G,R order, line 0 at 12 o'clock")
+        print(f"  wrote {args.png[1]}: frame {n}, B,G,R order; the preview draws line 0 at 12 o'clock, "
+              f"clockwise (the fan: line 0 at 3 o'clock, counter-clockwise, so mirror the preview "
+              f"left-right and turn it a quarter turn clockwise)")
     return 0
 
 

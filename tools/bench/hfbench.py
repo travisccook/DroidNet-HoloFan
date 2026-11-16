@@ -13,9 +13,14 @@ per entry: "HH:MM:SS.mmm <dir> <text>" (dir rece / sent / raw / "# ...").
 Common options: --log FILE (default $HFLOG, else /tmp/hf_mesh.log), --host
 (default $HFBENCH_HOST, resolved once, IPv4 only) or --host-ip A.B.C.D.
 
-CMD gets ';wHoloFan,' in front unless it starts with ';' (another node, e.g.
-';wHoloLifter,#HLF0') or '?' (a WCB command: only the read-only ?WDP,DUMP and
-?BACKUP pass; never a ?X,<value> setter). --until / --fail / --expect are
+CMD gets ';wHoloFan,' in front unless it is ';w<node>,<payload>' (another
+node, e.g. ';wHoloLifter,#HLF0') or starts with '?' (a WCB command: only the
+read-only ?WDP,DUMP and ?BACKUP pass; never a ?X,<value> setter). Refused, so
+that nothing but the one command reaches the WCB: any other ';' command, a
+payload that starts with ';' or '?', and anything holding the WCB's chain
+delimiter '^', CR, LF or another control character
+(docs/WCB_MESH_NOTES.md; a WCB whose command characters were changed from
+the defaults is not covered). --until / --fail / --expect are
 matched against received lines and MARKs, never against the WCB's echo of what
 was sent. Exit status: 0 done / matched, 1 send or setup error, 2 timeout or no
 match, 3 a --fail line (default: 'refused') came first.
@@ -62,19 +67,37 @@ def wcb_sender(host, host_ip=None, timeout=10.0):
     return send
 
 
+NODE_COMMAND = re.compile(r";[wW][A-Za-z0-9_-]+,(.+)", re.DOTALL)
+
+
 def fan_command(cmd):
     """The WCB command for CMD: ';wHoloFan,' + CMD unless it already names a
-    node (';') or is a read-only WCB command ('?'). ValueError otherwise."""
+    node (';w<node>,<payload>') or is a read-only WCB command ('?').
+    ValueError otherwise, and for anything the WCB would read as more than
+    that one command: it splits a line at '^' and at line ends, and takes ';'
+    and '?' as command characters (docs/WCB_MESH_NOTES.md)."""
     cmd = cmd.strip()
     if not cmd:
         raise ValueError("empty command")
-    if cmd.startswith(";"):
-        return cmd
+    shown = repr(cmd)
+    if "^" in cmd:
+        raise ValueError(f"{shown}: '^' is the WCB's chain delimiter; it would split this into several commands")
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in cmd):
+        raise ValueError(f"{shown}: CR, LF and other control characters are not sent (one command per line)")
     if cmd.startswith("?"):
         if cmd.upper() not in WCB_READ_ONLY:
             raise ValueError(f"{cmd}: only {', '.join(WCB_READ_ONLY)} go to the WCB (never ?X,<value> setters)")
         return cmd
-    return ";wHoloFan," + cmd
+    if cmd.startswith(";"):
+        m = NODE_COMMAND.fullmatch(cmd)
+        if not m:
+            raise ValueError(f"{shown}: the only ';' command sent is ';w<node>,<payload>'")
+        payload = m[1]
+    else:
+        payload, cmd = cmd, ";wHoloFan," + cmd
+    if payload[0] in ";?":
+        raise ValueError(f"{shown}: a payload starting with ';' or '?' is a WCB command, not a node's")
+    return cmd
 
 
 # ---------------------------------------------------------------- log lines
@@ -161,9 +184,10 @@ def kv_fields(text):
 
 def parse_fandiag(text):
     """'#HL:FANDIAG st=READY rxb=.. tx=.. ... rst=3 chg=0 v0=2 last=...' -> dict
-    (0.9.6 lines have no chg / v0)."""
-    i = text.find("#HL:FANDIAG ")
-    return kv_fields(text[i + 12:]) if i >= 0 else None
+    (0.9.6 lines have no chg / v0). A truncated line gives the fields that
+    arrived whole; a value cut short is whatever arrived, so callers check it."""
+    i = text.find("#HL:FANDIAG")
+    return kv_fields(text[i + 11:]) if i >= 0 else None   # {} for a line cut off before its first field
 
 
 SETTING_RE = re.compile(r"setting (\S+) (\S+) (\d+) (\d+) (\d+) ([^|\s]+)")
@@ -406,7 +430,8 @@ def analyze(entries):
         m = TEST_DONE.search(b) or TEST_STOP.search(b) or TEST_RESET.search(b)
         if m:
             if TEST_RESET.search(b):
-                a.rst.append((e.t, int(re.search(r"rst=(\d+)", b)[1]) if "rst=" in b else -1, "RESET record"))
+                rst = re.search(r"rst=(\d+)", b)             # "rst=?": the reason was not known
+                a.rst.append((e.t, int(rst[1]) if rst else -1, "RESET record"))
                 a.stops.append(f"{fmt_clock(e.t)} {b}")
             if "RESTORE FAILED" in b:
                 a.stops.append(f"{fmt_clock(e.t)} {b}")
@@ -485,7 +510,8 @@ def totals(a):
                 runs[-1][2] += 1
             else:
                 runs.append([v, t, 1])
-        out.append("rst values: " + ", ".join(f"{v} (x{n} from {fmt_clock(t)})" for v, t, n in runs))
+        out.append("rst values: " + ", ".join(f"{'?' if v < 0 else v} (x{n} from {fmt_clock(t)})"
+                                              for v, t, n in runs))
     else:
         out.append("rst values: none seen (FANDIAG replies are lossy: query #HLFQ)")
     out.append(f"#HLFY tests: {len(a.tests)}")

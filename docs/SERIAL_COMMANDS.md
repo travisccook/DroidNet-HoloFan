@@ -53,6 +53,16 @@ DroidNet-HoloLifter: https://github.com/travisccook/DroidNet-HoloLifter/blob/mai
 Provided by the HoloFan's own firmware (firmware/holofan). The fan
 answers only while it is powered (HoloLifter relay on) and on the mesh.
 
+Since 0.9.19 a command must be the whole line: trailing text, signs, spaces
+or extra digits make it unknown (#HLFV02, #HLFV3x, #HLFPx, #HLFW10 are
+ignored; #HLFG<n> takes 1-3 digits). After a clip listing longer than 1 KB,
+or one still printing at 1.5 s, the fan waits for the MCU to go quiet (up
+to 3 s more) before it sends the next line. Clip names in the console lines
+mirrored to the mesh show spaces, ^ and non-ASCII bytes as ?, as name= in
+#HLFS does. A raw #HLFX or console "mcu" line over 95 characters or with
+more than three arguments is refused. During #HLFE / #HLFJ the console's
+"mesh ..." saves are refused too. (All host-tested; not yet tried on a fan.)
+
 Playback (silent):
 
     #HLFG<n>        play catalog item n (1-based, order of #HLFD)
@@ -144,7 +154,9 @@ Diagnostics (bench):
              (0.9.5: up to 3 get_setting tries; 0.9.7: after the MCU has
              settled): the hold starts only once the MCU reports 3 (else
              "[test] STOPPED"), and the radio comes back once it reports
-             the old volume (at most ~10 s later, whatever it reports).
+             the old volume, and in any case 25 s after the restore
+             starts (the firmware's LOUD_RESTORE_MAX_MS; that limit is
+             untested on a fan).
              RTERM lines (to the WCB that sent #HLFY; held while the
              radio is off, sent after it is back): "[test] <n>: volume 3
              for ...", "[mcu] volume 3 requested, MCU reports 3" and a

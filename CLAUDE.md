@@ -59,14 +59,17 @@ same holds for their test suites.
   excludes v, u, w and y.
 - Never configure GPIO8 or GPIO9 (boot straps).
 - Never erase NVS, and never write outside the "hlmesh" namespace: NVS holds
-  the chip's RF calibration and the stock firmware's data. The first flash
-  never writes the nvs partition.
+  the chip's RF calibration and the stock firmware's data. The flasher
+  never erases the flash; its first flash and app-only flash never write the
+  nvs partition; only restore writes it, with the chip's own backed-up
+  contents.
 - The MCU drops or misreads a line sent while it is busy: keep the settle
   wait after every action and the queue limits.
 - Public defaults stay as they are: mesh TX power 8 dBm (maintenance 20),
   mesh off until a password is set, no Wi-Fi profiles.
 - A new image must reach the mesh within 30 s of booting or it rolls back;
-  do not mark an image valid any earlier.
+  do not mark an image valid any earlier. "Reach" = a frame received from
+  another node, not a radio that merely started.
 
 ## Command protocol
 
@@ -91,7 +94,8 @@ and setup commands with it.
 Never write home, droid or credential details into this repository: IP
 addresses on a home network, host names, Wi-Fi or mesh passwords, MAC
 addresses of real devices, personal paths, backups of a fan's flash.
-tools/check_private.py checks for them and runs as the pre-commit hook:
+tools/check_private.py checks for them and runs as the pre-commit hook
+(run `sh tools/install_hooks.sh` once per clone to install it):
 
     python3 tools/check_private.py            whole tree
     python3 tools/check_private.py --staged   what is staged

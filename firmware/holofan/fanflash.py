@@ -11,9 +11,15 @@ The adapter has no auto-reset: hold GPIO9 (hole 2) to GND while you apply
                                           keep it as DIR/stock-<mac>.bin if both match
     python fanflash.py first   PORT DIR   write bootloader, partition table, otadata
                                           and app; never NVS; needs this chip's backup
-    python fanflash.py restore PORT DIR   write this chip's stock image back (2 MB)
+    python fanflash.py restore PORT DIR   write this chip's stock image back: all 2 MB,
+                                          so NVS gets the chip's own backed-up contents
     python fanflash.py app     PORT DIR   recovery only: the app into ota_0 (0x10000);
-                                          needs this chip's backup
+                                          never NVS; needs this chip's backup
+
+No command erases the flash. backup only reads. first and app refuse an image
+that would not fit its region, so they cannot reach the nvs partition
+(0x9000-0xEFFF). restore is the one command that writes NVS: it puts back
+what backup read from the same chip.
 
 Exit 0 done, 2 usage, 3 refused. ESPTOOL / ESPEFUSE replace the esptool and
 espefuse commands (the tests use a fake); HOLOFAN_BUILD replaces build/.
@@ -30,10 +36,14 @@ import tempfile
 
 CHIP, BAUD, FLASH_SIZE = "esp32c2", "115200", 0x200000
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIRST_IMAGES = [("0x0", "bootloader/bootloader.bin"),
-                ("0x8000", "partition_table/partition-table.bin"),
-                ("0x1F0000", "ota_data_initial.bin"),
-                ("0x10000", "holofan.bin")]
+# (offset, image under build/, room in bytes). The offsets of ota_0 and otadata
+# and their sizes are partitions.csv's (tests/test_fanflash.py checks them);
+# 0x0 and 0x8000 are the ESP32-C2's fixed bootloader and partition-table
+# offsets, and the partition table's sector ends where nvs begins (0x9000).
+FIRST_IMAGES = [("0x0", "bootloader/bootloader.bin", 0x8000),
+                ("0x8000", "partition_table/partition-table.bin", 0x1000),
+                ("0x1F0000", "ota_data_initial.bin", 0x2000),
+                ("0x10000", "holofan.bin", 0xF0000)]
 # eFuse -> (accepted values, what any other value means)
 GATE = {"SPI_BOOT_CRYPT_CNT": (("Disable", 0, 3), "flash encryption is on"),
         "SECURE_BOOT_EN": ((False, 0), "secure boot is on"),
@@ -125,13 +135,33 @@ def backup_paths(directory, mac):
     return stem + ".bin", stem + ".json"
 
 
+def half_backup(bin_path, meta_path):
+    """The message for a backup pair with one file missing, or None. backup()
+    renames the image and then its metadata, so a run killed between the two
+    leaves an image without metadata; a missing image means someone moved it."""
+    have_bin, have_meta = os.path.exists(bin_path), os.path.exists(meta_path)
+    if have_bin and not have_meta:
+        return (f"{bin_path} has no {os.path.basename(meta_path)}: a backup was interrupted, or the "
+                "metadata was removed, so nothing says this image was verified. Nothing was deleted. "
+                "Move the image out of this directory (keep it until a new backup is done), "
+                "then run backup again.")
+    if have_meta and not have_bin:
+        return (f"{meta_path} has no {os.path.basename(bin_path)}: the backup image is missing. "
+                "Put the image back, or move the .json out of this directory and run backup again.")
+    return None
+
+
 def backup(port, directory):
     info = check(port)
     os.makedirs(directory, exist_ok=True)
     bin_path, meta_path = backup_paths(directory, info["mac"])
-    if os.path.exists(bin_path) or os.path.exists(meta_path):
+    half = half_backup(bin_path, meta_path)
+    if half:
+        raise Refuse(half)
+    if os.path.exists(bin_path):
         raise Refuse(f"{bin_path} already exists: a stock backup is never overwritten")
     reads = [os.path.join(directory, f".read{n}.tmp") for n in (1, 2)]
+    meta_tmp = os.path.join(directory, ".meta.tmp")
     try:
         for path in reads:
             print(f"reading 2 MB into {path} ...")
@@ -142,47 +172,72 @@ def backup(port, directory):
             raise Refuse(f"read sizes {sizes}, expected {FLASH_SIZE}")
         if sums[0] != sums[1]:
             raise Refuse("the two reads differ: check the wiring and run backup again")
-        os.replace(reads[0], bin_path)
+        meta = {"mac": info["mac"], "sha256": sums[0], "size": FLASH_SIZE, "flash_size": info["flash_size"],
+                "efuses": info["efuses"], "date": datetime.datetime.now().isoformat(timespec="seconds")}
+        with open(meta_tmp, "w") as f:
+            json.dump(meta, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        # Both files are complete before either gets its name. The two renames
+        # cannot be one step; a run killed between them leaves an image without
+        # metadata, which half_backup() reports.
+        if os.path.exists(bin_path) or os.path.exists(meta_path):
+            raise Refuse(f"{bin_path} appeared during the read: a stock backup is never overwritten")
+        os.rename(reads[0], bin_path)
+        os.rename(meta_tmp, meta_path)
     finally:
-        for path in reads:
+        for path in reads + [meta_tmp]:
             if os.path.exists(path):
                 os.remove(path)
-    meta = {"mac": info["mac"], "sha256": sums[0], "size": FLASH_SIZE, "flash_size": info["flash_size"],
-            "efuses": info["efuses"], "date": datetime.datetime.now().isoformat(timespec="seconds")}
-    with open(meta_path, "w") as f:
-        json.dump(meta, f, indent=2)
     print(f"backup OK: {bin_path} (sha256 {sums[0]}). Keep it safe: it is the only way back to stock.")
 
 
 def verified_backup(directory, mac):
     bin_path, meta_path = backup_paths(directory, mac)
-    if not (os.path.exists(bin_path) and os.path.exists(meta_path)):
+    half = half_backup(bin_path, meta_path)
+    if half:
+        raise Refuse(half)
+    if not os.path.exists(bin_path):
         raise Refuse(f"no backup of chip {mac} in {directory}: run backup first")
-    with open(meta_path) as f:
-        meta = json.load(f)
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+    except ValueError:
+        meta = None
+    if not isinstance(meta, dict):
+        raise Refuse(f"the backup metadata {meta_path} is not readable JSON: the backup cannot be verified")
     if meta.get("mac") != mac or os.path.getsize(bin_path) != FLASH_SIZE or sha256(bin_path) != meta.get("sha256"):
         raise Refuse(f"the backup {bin_path} is damaged (size or sha256 differs from {meta_path})")
     return bin_path
 
 
+def check_fits(offset, path, room):
+    size = os.path.getsize(path)
+    if size > room:
+        raise Refuse(f"{path} is {size} bytes; only {room} fit at {offset}. Nothing was written.")
+
+
 def first(port, directory):
-    images = [(off, os.path.join(build_dir(), rel)) for off, rel in FIRST_IMAGES]
-    missing = [p for _, p in images if not os.path.exists(p)]
+    images = [(off, os.path.join(build_dir(), rel), room) for off, rel, room in FIRST_IMAGES]
+    missing = [p for _, p, _ in images if not os.path.exists(p)]
     if missing:
         raise Refuse("missing " + ", ".join(missing) + ": run ./build.sh first")
+    for off, path, room in images:
+        check_fits(off, path, room)
     mac = read_mac(port)
     verified_backup(directory, mac)
     args = ["write_flash", "--flash_mode", "dio", "--flash_freq", "60m", "--flash_size", "2MB"]
-    for off, path in images:
+    for off, path, _ in images:
         args += [off, path]
-    print("writing bootloader 0x0, partition table 0x8000, otadata 0x1F0000, app 0x10000 (NVS untouched)")
+    print("writing bootloader 0x0, partition table 0x8000, otadata 0x1F0000, app 0x10000 "
+          "(NVS, 0x9000-0xEFFF, is not erased or written)")
     esptool(port, *args, capture=False)
     print("done. Remove GPIO9 from GND, then remove and reapply 3.3 V.")
 
 
 def restore(port, directory):
     path = verified_backup(directory, read_mac(port))
-    print(f"writing the stock image {path} at 0x0 (2 MB)")
+    print(f"writing the stock image {path} at 0x0 (all 2 MB; NVS gets this chip's backed-up contents)")
     esptool(port, "write_flash", "--flash_size", "keep", "0x0", path, capture=False)
     print("done. Remove GPIO9 from GND, then remove and reapply 3.3 V.")
 
@@ -191,9 +246,11 @@ def app(port, directory):
     path = os.path.join(build_dir(), "holofan.bin")
     if not os.path.exists(path):
         raise Refuse(f"missing {path}: run ./build.sh first")
+    off, room = next((o, r) for o, rel, r in FIRST_IMAGES if rel == "holofan.bin")
+    check_fits(off, path, room)
     verified_backup(directory, read_mac(port))
     print("recovery: app into ota_0 only; if the fan boots ota_1 this changes nothing, prefer an OTA")
-    esptool(port, "write_flash", "0x10000", path, capture=False)
+    esptool(port, "write_flash", off, path, capture=False)
 
 
 def main(argv):

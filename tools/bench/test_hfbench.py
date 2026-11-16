@@ -55,6 +55,26 @@ class CommandTest(Base):
             with self.assertRaises(ValueError, msg=c):
                 hfbench.fan_command(c)
 
+    def test_only_one_command_ever_reaches_the_wcb(self):
+        # docs/WCB_MESH_NOTES.md: the WCB splits a line at '^' and takes ';' and '?' as command characters
+        for c in ("#HLFS^?WCBQ,3", "#HLFS^;m1", ";wHoloFan,#HLFS^?REBOOT", "?BACKUP^?REBOOT", "^",
+                  "#HLFS\r?REBOOT", "#HLFS\n?REBOOT", ";w16,#HLFS\r\n?WCBQ,3", "#HLFS\x00", "#HLFS\tx",
+                  ";?REBOOT", ";", ";m1", ";s1,hello", ";wHoloFan", ";wHoloFan,", ";w,#HLFS", ";w 16,#HLFS",
+                  ";wHoloFan,?REBOOT", ";wHoloFan,;wHoloLifter,#HLU", ";wHoloFan,;?REBOOT"):
+            with self.assertRaises(ValueError, msg=repr(c)):
+                hfbench.fan_command(c)
+
+    def test_a_trailing_line_end_is_only_stripped(self):
+        self.assertEqual(hfbench.fan_command("#HLFS\r"), ";wHoloFan,#HLFS")
+        self.assertEqual(hfbench.fan_command(";w15,#HLU\r\n"), ";w15,#HLU")
+
+    def test_send_refuses_before_anything_is_sent(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = hfbench.main(["send", "#HLFS", "#HLFQ^?REBOOT", "--host-ip", "192.0.2.1"])
+        self.assertEqual(status, 1)                      # and no_network() saw no call
+        self.assertIn("chain delimiter", out.getvalue())
+
     def test_sender_resolves_once_and_posts_json(self):
         posted = []
 
@@ -236,6 +256,26 @@ class SummaryTest(Base):
             self.assertIn(want, stops)
         self.assertEqual(len(self.a.outages), 1)
         self.assertEqual(self.a.outages[0].n, 2)
+
+    def test_summary_survives_truncated_fandiag_and_unknown_rst(self):
+        log = """19:00:00.000 rece #HL:FANDIAG
+19:00:01.000 rece #HL:FANDIAG st=READY rxb=900 tx=4
+19:00:02.000 rece #HL:FANDIAG st=READY rxb=900 tx=40 tries=1 ans=1 rx5=20/20 sync18=20/20 rst=
+19:00:03.000 rece #HL:FANDIAG st=RE
+19:00:04.000 rece [ETM] #HL:FANDIAG st=READY rxb=1 tx= rst=? chg=0
+19:00:10.000 rece [TERM:16][test] RESET during #HLFY1240 (test 5): phase HOLD, 3.0 s into the hold; rst=?
+19:00:11.000 rece [TERM:16][test] RESET during #HLFY1240 (test 6): phase HOLD, 3.0 s into the hold; rst=
+19:00:12.000 rece [TERM:16][test] RESET during #HLFY1240 (test 7): phase HOLD
+19:00:13.000 rece #HL:FANDIAG st=READY rxb=100 tx=5 tries=1 ans=1 rx5=20/20 sync18=20/20 rst=3 chg=1 v0=2 last=y
+"""
+        text = "\n".join(hfbench.summary(io.StringIO(log)))
+        self.assertIn("FANDIAG st=READY rxb=900 tx=4", text)
+        self.assertIn("rst values: ? (x3 from 19:00:10", text)
+        self.assertIn("3 (x1 from 19:00:13", text)
+        self.assertEqual(hfbench.parse_fandiag("#HL:FANDIAG"), {})
+        self.assertEqual(hfbench.parse_fandiag("#HL:FANDIAG st=RE"), {"st": "RE"})
+        a = hfbench.analyze([hfbench.parse_line(line) for line in log.splitlines()])
+        self.assertEqual([v for _, v, _ in a.rst], [-1, -1, -1, 3])
 
     def test_summary_text(self):
         text = "\n".join(hfbench.summary(SESSION.splitlines()))

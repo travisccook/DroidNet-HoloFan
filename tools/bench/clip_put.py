@@ -114,9 +114,47 @@ def _gave_up(log, name, msg):
     return 1
 
 
+def open_session(fan, query, gave_up, sleep, log):
+    """POST /api/upload until the fan answers; the reply dict, or None once it
+    refused or gave_up(). The open is idempotent and can take about as long as
+    the socket timeout on the fan (docs/MAINTENANCE_API.md), so a lost or late
+    reply and a 503 busy are retried: the next POST finds the same session."""
+    while True:
+        st, js = fan.call("POST", "/api/upload?" + urlencode(query))
+        if st == 200 and js is not None:
+            return js
+        if st is not None and st != 200 and not (st == 503 and js and js.get("err") == "busy"):
+            log(f"open refused: {st} {json.dumps(js) if js is not None else '(not JSON)'}")
+            return None
+        if gave_up():
+            log("gave up: the fan did not answer the open")
+            return None
+        sleep(1)
+
+
+PRE_MIN, PRE_MAX = 20, 574     # frames; lib/FanLogic/UploadSession.h SESSION_PRE_MAX: the 594 frames the
+                               # ring can hold (5 x 184,320 B less one 65,536 B erase block) minus one window
+
+
+def positive(text):
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text}: must be 1 or more")
+    return value
+
+
+def prefill(text):
+    value = int(text)
+    if not PRE_MIN <= value <= PRE_MAX:
+        raise argparse.ArgumentTypeError(f"{text}: the fan takes {PRE_MIN}..{PRE_MAX} frames")
+    return value
+
+
 def upload(fan, data, name, chunk=32768, mhz=None, clk=None, giveup=900.0,
            log=print, sleep=time.sleep, now=time.monotonic, poll=2.0,
            pace=None, igap=None, pre=None, dry=None, keep=None, dark=False):
+    if chunk < 1:
+        raise ValueError("chunk must be 1 byte or more")    # 0 or less would never make progress
     size = len(data)
     q = {"name": name, "size": size}
     if mhz:
@@ -135,19 +173,11 @@ def upload(fan, data, name, chunk=32768, mhz=None, clk=None, giveup=900.0,
         return now() - progress[0] > giveup
 
     try:
-        # 1. Open. Idempotent, so a lost reply is just retried.
-        while True:
-            st, js = fan.call("POST", "/api/upload?" + urlencode(q))
-            if st == 200 and js is not None:
-                sid, staged = js["id"], js["staged"]
-                break
-            if st is not None and st != 200 and not (st == 503 and js and js.get("err") == "busy"):
-                log(f"open refused: {st} {json.dumps(js) if js is not None else '(not JSON)'}")
-                return 1
-            if gave_up():
-                log("gave up: the fan did not answer the open")
-                return 1
-            sleep(1)
+        # 1. Open.
+        js = open_session(fan, q, gave_up, sleep, log)
+        if js is None:
+            return 1
+        sid, staged = js["id"], js["staged"]
         log(f"session {sid}: {name} {size:,} B, the fan holds {staged:,} B")
 
         # 2. Chunks from staged; on anything unexpected ask the fan and continue.
@@ -239,25 +269,31 @@ def abort(fan, log=print, sleep=time.sleep, now=time.monotonic, giveup=120.0):
         fan.close()
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--abort", metavar="BASE_URL", help="abort the fan's active upload session")
     ap.add_argument("file", nargs="?")
     ap.add_argument("base", nargs="?", help="e.g. http://holofan.local")
     ap.add_argument("name", nargs="?", help="NN-Name.bin on the SD card")
-    ap.add_argument("--chunk", type=int, default=32768)
+    ap.add_argument("--chunk", type=positive, default=32768, help="bytes per PUT (1 or more; default 32768)")
     ap.add_argument("--mhz", choices=["10", "20", "40"])
     ap.add_argument("--clk", choices=["pll", "xtal"])
     ap.add_argument("--pace", choices=["reserve", "burst"], help="reserve (the fan default) or window-burst (0.9.1: sessions refuse the per-second trickle)")
     ap.add_argument("--keep", type=int, metavar="MS", help="0.8.2: reserve pace: ms between windows (1000..10000, below dry)")
     ap.add_argument("--igap", type=int, metavar="MS", help="0.8.1: least ms between windows (0..60000)")
-    ap.add_argument("--pre", type=int, metavar="N", help="0.8.1: frames buffered before sending (20..617; default: the ring minus one window)")
+    ap.add_argument("--pre", type=prefill, metavar="N",
+                    help=f"0.8.1: frames buffered before sending ({PRE_MIN}..{PRE_MAX}; default {PRE_MAX}: the ring minus one window)")
     ap.add_argument("--dry", type=int, metavar="MS", help="0.8.1: dry limit (1000..600000; default 4000 for reserve, else 30000)")
     ap.add_argument("--dark", action="store_true", help="0.9.8: the fan plays 99-Black.bin (or dims to brightness 1) while uploading")
     ap.add_argument("--mss", type=int, default=0, help="lower the send MSS after connect (macOS); 0 = leave it")
     ap.add_argument("--timeout", type=float, default=5.0, help="socket timeout per operation, s (a fresh connection beats TCP back-off)")
     ap.add_argument("--giveup", type=float, default=900.0, help="stop after this long without progress, s")
-    a = ap.parse_args()
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
+    a = ap.parse_args(argv)
     if a.abort:
         return abort(Fan(a.abort, a.timeout, a.mss))
     if not (a.file and a.base and a.name):

@@ -6,12 +6,15 @@ host, rounds, gap, logf, label = sys.argv[1], int(sys.argv[2]), float(sys.argv[3
 def post(c):
     body = json.dumps({"port": "/dev/ttyUSB0", "command": c, "expect_reply": False}).encode()
     req = urllib.request.Request(f"http://{host}.local/api/wcb/command", body, {"Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(req, timeout=10)).get("success")
+    try: return json.load(urllib.request.urlopen(req, timeout=10)).get("success") is True
+    except Exception as e:                 # a timeout or a refused connection: count it and go on
+        print(f" send failed: {c} {e!r}"); return False
 t0 = time.strftime("%H:%M:%S")
 with open(logf, "a") as f: f.write(f"{t0}.000 # probe {label} start\n")
+failed = 0
 for i in range(rounds):
-    post(";wHoloFan,#HLZQ"); time.sleep(gap)
-    post(";wHoloFan,#HLFXv"); time.sleep(gap)
+    failed += not post(";wHoloFan,#HLZQ"); time.sleep(gap)
+    failed += not post(";wHoloFan,#HLFXv"); time.sleep(gap)
 time.sleep(3)
 t1 = time.strftime("%H:%M:%S")
 with open(logf, "a") as f: f.write(f"{t1}.000 # probe {label} end\n")
@@ -24,3 +27,4 @@ off = [l for l in seg if "WCB16" in l]
 print(f"{label} {t0}-{t1}: ZQ broadcast replies {len(rq)}/{sq}, RTERM replies {rx}/{sx}")
 if rq: print(" first", rq[0][:150]); print(" last ", rq[-1][:150])
 for l in off: print(" ", l)
+if failed: print(f" {failed} of {2 * rounds} commands could not be sent (DroidNet Pi unreachable?): the counts above miss them")

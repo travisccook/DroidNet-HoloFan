@@ -127,6 +127,33 @@ class ProbeTest(unittest.TestCase):
         linkprobe.report(rep, log=lines.append)
         self.assertTrue(any(line.startswith("staged 800,000 B") for line in lines))
 
+    def test_open_is_retried_when_its_reply_is_lost_or_late(self):
+        # the open can take about as long as the socket timeout: one POST is not enough
+        self.srv.fan.lose_post_replies = 2
+        lines = []
+        rep, _ = linkprobe.probe(clip_put.Fan(self.base), 100_000, "09-Probe.bin", log=lines.append,
+                                 sleep=lambda x: None)
+        self.assertIsNotNone(rep, lines)
+        self.assertEqual(rep["bytes"], 100_000)
+        self.assertEqual(self.srv.fan.opens, 1)                    # one session, found again
+        self.assertEqual(len(self.srv.fan.post_queries), 3)
+
+    def test_open_gives_up_and_refusals_stop_at_once(self):
+        self.srv.fan.lose_post_replies = 10 ** 6
+        clock = iter(range(0, 10 ** 6, 10))
+        lines = []
+        rep, _ = linkprobe.probe(clip_put.Fan(self.base), 100_000, "09-Probe.bin", log=lines.append,
+                                 sleep=lambda x: None, now=lambda: next(clock), giveup=60)
+        self.assertIsNone(rep)
+        self.assertTrue(any("did not answer the open" in line for line in lines), lines)
+        self.srv.fan.lose_post_replies = 0
+        self.srv.fan.post_text_404 = True
+        before = len(self.srv.fan.post_queries)
+        rep, _ = linkprobe.probe(clip_put.Fan(self.base), 100_000, "09-Probe.bin", log=lines.append,
+                                 sleep=lambda x: None)
+        self.assertIsNone(rep)
+        self.assertTrue(any("open refused: 404" in line for line in lines), lines)
+
     def test_resumes_after_a_dropped_chunk(self):
         self.srv.fan.drop_put = {1: 5000}
         rep, _ = linkprobe.probe(clip_put.Fan(self.base), 200_000, "09-Probe.bin", log=lambda x: None,

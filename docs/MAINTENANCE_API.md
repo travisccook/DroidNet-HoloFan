@@ -29,7 +29,9 @@ the reboot of an OTA. A power cycle in maintenance leaves the fan at its
 power-up volume, 3.
 
 Refusals (the node stays on the mesh): profile has no SSID; already in
-maintenance; HoloLifter only: the lift is moving.
+maintenance; HoloLifter only: the lift is moving; HoloFan only: a #HLFY
+test is running, the #HLFE sag meter is running, or the fan's Wi-Fi station
+could not be set up at boot ("Wi-Fi station not available").
 
 While in maintenance the HoloLifter's motor driver is disabled; its limit
 switches, e-stop and USB console keep running. The node is off the mesh:
@@ -93,9 +95,18 @@ There is no idle timeout.
                        see PUT ?mhz=&clk=)
                rx      the controller's last bytes, made printable
              HoloFan "wifi" (since 0.8.0):
-               {"rssi":<dBm>,"ch":<channel>,"disc":<n>,"reason":<code>}
+               {"rssi":<dBm>,"ch":<channel>,"bssid":"xx:xx:xx:xx:xx:xx",
+                "ps":<n>,"txp":<n>,"disc":<n>,"reason":<code>}
                rssi, ch  the access point as the fan hears it now (null
                          while not associated)
+               bssid     that access point's MAC address, lower-case hex.
+                         It identifies a home network: keep it out of
+                         anything you publish
+               ps        the Wi-Fi power-save mode (esp_wifi wifi_ps_type_t;
+                         0 = none)
+               txp       the radio's maximum transmit power, in units of
+                         0.25 dBm (80 = 20 dBm)
+               bssid, ps and txp are present only while associated
                disc      Wi-Fi disconnects since maintenance started
                reason    the last disconnect's reason code (esp_wifi
                          wifi_err_reason_t)
@@ -128,6 +139,11 @@ There is no idle timeout.
            body: the clip bytes (Content-Length required; the fan pads to
                  a multiple of 28800 itself); name NN-<chars>.bin, may be
                  percent-encoded in the URL; no '/', '\' or ':'
+                 Size: 1 to 134,217,728 bytes (128 MiB, CLIP_MAX_BYTES in
+                 the firmware; the same cap holds for size= and off= of the
+                 resumable upload). Outside it: 400 "length". Untested
+                 near the cap: the largest clip uploaded on the bench is
+                 4,377,600 bytes.
            query (optional, since 0.7.2; for single-variable bench tests):
                  the SPI clock of this upload only
                    mhz   10, 20 or 40 (MHz); default 40
@@ -141,7 +157,8 @@ There is no idle timeout.
                  repeated key, or an empty pair is a 400 "query" and
                  nothing reaches the LED/SD controller. "last" shows the
                  clock the driver actually set (spi=).
-           The fan first buffers up to ~900 KB of the body in flash (its
+           The fan first buffers up to 855,360 bytes of the body (594
+           frames; computed from the ring's size) in flash (its
            spare firmware slot) before it starts writing to the SD card, so
            expect no reply for the whole transfer; Wi-Fi stalls of up to
            about a minute are survived; a dropped connection loses the upload.
@@ -160,13 +177,19 @@ There is no idle timeout.
     POST   /api/card/format?confirm=FORMAT-SD-CARD
            erases the SD card (every clip). 200 {"ok":true,"clips":[]};
            400 {"ok":false,"err":"confirm"} without the exact token
-    DELETE /api/clips/<name>
+    DELETE /api/clips/<name>[?force=1]
            takes about 5-9 s: the fan lists the card, sends the delete,
            waits 3 s (the MCU never confirms it) and lists again; up to
            about 20 s when the MCU is busy, because an empty or cut-off
            listing is asked for again, up to 3 times (HoloFan 0.9.15).
            Give it a 30 s timeout, and after a timeout list the clips
            (GET /api/clips) before trying again.
+           force=1: do not look for the name in the listing first; send the
+           delete anyway. For the partial file of an upload that ended
+           while the fan was away (see "Client algorithm"), which the
+           listing may not show. 200 then only means that the name is not
+           in the listing afterwards, and there is no 404. Any other
+           value, or no force, is the normal delete.
            200 {"ok":true}             gone from a full listing
            400 {"ok":false,"err":"name"}
            404 {"ok":false,"err":"notfound"}
@@ -174,6 +197,13 @@ There is no idle timeout.
                                        still listed, or no full listing came
                                        back to confirm it (0.9.15)
            503 as GET
+    GET    /api/trace
+           200 text/plain: the fan's conversation with its LED/SD
+           controller during the last clip operation that took the
+           controller (upload, delete, format, list), for bench
+           diagnostics. At most 1,536 bytes are kept. Bytes outside
+           0x20-0x7E other than line feeds are shown as \xNN. Empty before
+           the first such operation.
 
     The clip routes do not check the mode: they work whenever the fan's
     HTTP server runs (today: in maintenance mode, the only time the fan has
@@ -200,8 +230,9 @@ client reconnects. One session at a time.
     sends a window (20 frames back to back) only when 20 frames are
     buffered AND (the ring is full OR keep ms (default 3000) have passed
     since the previous window's last frame): windows every 3 s, never a
-    partial one, no trickle. With a full ring the reserve covers about 31
-    windows x 3 s = about 90 s of Wi-Fi outage. Once the body is
+    partial one, no trickle. With a full ring the reserve covers 29 whole
+    windows x 3 s = about 87 s of Wi-Fi outage (computed from the 594-frame
+    ring; not measured). Once the body is
     complete everything goes out at once. The session fails fast
     ("recv", body end 'd') when no frame has gone out for dry ms (default
     4000 for reserve), because the controller would have aborted by then.
@@ -219,7 +250,7 @@ client reconnects. One session at a time.
     a silent chunk after 3 s.
     Connections (0.8.5): the fan serves at most 3 HTTP connections (2 more
     may wait; a new one closes the least recently used), each with a
-    4,288-byte TCP receive window, and has 6 static + 10 dynamic Wi-Fi RX
+    2,440-byte TCP receive window (0.9.16; 4,288 bytes before), and has 6 static + 10 dynamic Wi-Fi RX
     buffers (0.8.6). That keeps the heap above ~5 KB during a session:
     before 0.8.5 queued connections used it up and the fan stopped
     receiving (still associated) until the session ended. Use one
@@ -227,8 +258,9 @@ client reconnects. One session at a time.
     GETs. From the dome a connection carries about 15-35 KB/s.
     Window gate (0.8.7): while a window waits for the controller's ack (a
     ~50 us LOW on GPIO18) the fan does not write chunk bytes to flash: a
-    flash erase stops the chip for ~40 ms and the ack was missed (session
-    failed "sync"). A PUT therefore waits while each window is sent and
+    flash erase stops the chip (about 37 ms for a 4 KB sector, about 95 ms
+    for the 64 KB blocks 0.9.18 erases; the firmware's bench figures) and
+    the ack was missed (session failed "sync"). A PUT therefore waits while each window is sent and
     acknowledged: normally tens of ms, up to a few seconds when the
     controller is slow to ack (its own SD write); clients see nothing else.
     pace=burst (0.8.1: windows as soon as 20 frames are buffered, igap
@@ -257,9 +289,11 @@ client reconnects. One session at a time.
                    and the next window's first unless the ring is full.
              igap  0..60000 ms (default 0; must be below dry): least time between one window's
                    last frame and the next window's first (burst only).
-             pre   20..617 frames (default 0 = 574, the ring minus one
-                   window; more counts as 574 since 0.9.18): buffered before the file is created and
-                   sending starts.
+             pre   20..574 frames (default 0 = 574, the ring minus one
+                   window): buffered before the file is created and
+                   sending starts. More than 574 is a 400 "query" since 0.9.19 (older
+                   firmware took up to 617; 0.9.18 counted more than 574
+                   as 574).
              dry   1000..600000 ms (default 4000 for reserve, 30000 for
                    burst): the session fails
                    ("recv", body end 'd') when no frame has gone to the
@@ -315,6 +349,8 @@ client reconnects. One session at a time.
     DELETE /api/upload[?id=<n>]
            Abort. 200 {"ok":true,"state":".."}; the session then ends as
            failed/abort and the partial file is deleted.
+           400 {"ok":false,"err":"query"}   an id that is not 1..2147483647,
+               a repeated id, any other key, or an empty pair
            404 {"ok":false,"err":"id"}
 
     How a session fails: no bytes for 10 minutes before sending starts
@@ -375,10 +411,18 @@ Example with curl:
 ## After an OTA: automatic rollback
 
 The new image boots in the bootloader's PENDING_VERIFY state. It keeps
-itself only if, within 30 s, it reaches the mesh. (The fan does not require
+itself only if, within 30 s, it reaches the mesh: it must receive a frame
+from another node of the mesh (a WCB sends a heartbeat about every 10 s), so
+update with a WCB switched on. Before HoloLifter 1.0.2 / HoloFan 0.9.19 a
+radio that had merely started counted, which kept an image that could not
+hear the mesh. (Host-tested; not yet tried on a node. The fan does not require
 its LED/SD controller to answer: a silent controller must not block the
 update that fixes it.) Otherwise it rolls back to the previous image on its own.
 A node with no mesh password configured is not rolled back for that reason.
+
+An OTA error reply that leaves part of the body unread (400 length, 500
+from the write or the receive) closes the connection after the reply
+(HoloFan 0.9.19), as every clip PUT error does.
 
 ## Security
 
