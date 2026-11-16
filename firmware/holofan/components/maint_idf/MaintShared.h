@@ -22,7 +22,7 @@ void setRecvTimeout(httpd_req_t* r, int seconds);
 // "<op> <name> <err> f=<frames> <diag>" into /api/info "last" (JSON-safe).
 void noteLast(const char* op, const char* name, fanlogic::ClipErr e, size_t frames, const char* diag);
 const ClipHooks& clipHooks();
-// The 8 KB "s" reply buffer: the HTTP task, or the upload task while a
+// The 4 KB "s" reply buffer (8 KB before 0.8.6): the HTTP task, or the upload task while a
 // session runs (every other user of it is refused then).
 char* scratch();
 size_t scratchSize();

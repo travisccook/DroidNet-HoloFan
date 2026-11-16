@@ -30,10 +30,10 @@ void test_query_open_timing_knobs() {
   TEST_ASSERT_EQUAL_UINT32(0, (uint32_t)q.pre);
   TEST_ASSERT_EQUAL_UINT32(4000, q.dryMs);
   TEST_ASSERT_EQUAL(QueryErr::OK, parseUploadQuery(UploadReq::OPEN,
-                    "name=03-R.bin&size=1&pace=burst&igap=60000&pre=617&dry=600000", q));
+                    "name=03-R.bin&size=1&pace=burst&igap=60000&pre=574&dry=600000", q));
   TEST_ASSERT_EQUAL(Pace::BURST, q.pace.pace);
   TEST_ASSERT_EQUAL_UINT32(60000, q.pace.igapMs);
-  TEST_ASSERT_EQUAL_UINT32(617, (uint32_t)q.pre);
+  TEST_ASSERT_EQUAL_UINT32(574, (uint32_t)q.pre);
   TEST_ASSERT_EQUAL_UINT32(600000, q.dryMs);
   TEST_ASSERT_EQUAL(QueryErr::OK, parseUploadQuery(UploadReq::OPEN,
                     "dry=1000&pre=20&igap=0&pace=burst&size=1&name=03-R.bin", q));
@@ -96,7 +96,8 @@ void test_query_open_timing_knobs_strict() {
     "pace=fast", "pace=", "pace=burst&pace=burst", "pace=BURST", "pace=reserve&pace=reserve",
     "igap=60001", "igap=-1", "igap=", "igap=1&igap=1",
     "keep=999", "keep=10001", "keep=", "keep=-1", "keep=2000&keep=2000",
-    "pre=19", "pre=618", "pre=0", "pre=20&pre=20",
+    "pre=19", "pre=575", "pre=617", "pre=618",   // 575..617 were taken and counted as 574 before
+    "pre=0", "pre=20&pre=20",
     "dry=999", "dry=600001", "dry=", "dry=2000&dry=2000"};
   for (const char* k : bad) {
     char qs[96];

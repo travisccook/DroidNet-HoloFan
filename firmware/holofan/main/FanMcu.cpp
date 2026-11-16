@@ -76,20 +76,26 @@ static void runRaw(char* typed) {
   int argc = 0;
   char* save = nullptr;
   char* cmd = strtok_r(typed, " ", &save);
-  for (char* t = strtok_r(nullptr, " ", &save); t && argc < 3; t = strtok_r(nullptr, " ", &save)) args[argc++] = t;
+  char* t = strtok_r(nullptr, " ", &save);
+  for (; t && argc < 3; t = strtok_r(nullptr, " ", &save)) args[argc++] = t;
   char line[fanlogic::MCU_LINE_MAX];
-  if (!cmd || fanlogic::buildLine(cmd, args, argc, line, sizeof(line)) < 0) {
-    con("[mcu] refused (empty, unsafe, or v)");
+  // A fourth argument is refused too: the line sent is the line typed (and,
+  // from the mesh, the line rawMeshLineAllowed checked), never a part of it.
+  if (!cmd || t || fanlogic::buildLine(cmd, args, argc, line, sizeof(line)) < 0) {
+    con("[mcu] refused (empty, unsafe, too long, or v)");
     return;
   }
   static char reply[1024];
   int n = s_link.transact(line, nullptr, 2000, reply, sizeof(reply));
+  // A reply that filled the buffer (a long "s" listing) is still being
+  // printed: let the MCU finish before the next line goes to it.
+  fanlogic::settleIfCut(s_link, n, sizeof(reply));
   char out[CON_LINE_MAX + 1];
   size_t o = 0;
   for (int i = 0; i < n && o + 4 < sizeof(out); i++) {
     unsigned char c = (unsigned char)reply[i];
     if (c == '\n') { out[o++] = '|'; }
-    else if (c >= 0x20 && c < 0x7f) out[o++] = (char)c;
+    else if (c >= 0x20 && c < 0x7f && c != '^') out[o++] = (char)c;   // '^' splits a WCB line: escaped, as #HLFS names
     else o += (size_t)snprintf(out + o, sizeof(out) - o, "\\x%02x", c);
   }
   out[o] = '\0';
@@ -105,7 +111,7 @@ static void printVolumeTrace(const char* t) {
   size_t o = 0;
   for (const char* p = t; *p; p++) {
     unsigned char c = (unsigned char)*p;
-    out[o++] = c == '\n' ? '|' : (c >= 0x20 && c < 0x7f) ? (char)c : '.';
+    out[o++] = c == '\n' ? '|' : (c >= 0x20 && c < 0x7f && c != '^') ? (char)c : '.';
     if (o == CHUNK) { out[o] = '\0'; con("[mcu] vt: %s", out); o = 0; }
   }
   if (o) { out[o] = '\0'; con("[mcu] vt: %s", out); }
@@ -237,9 +243,12 @@ void fanMcuDiag(char* out, size_t size) {
 }
 
 bool fanMcuRaw(const char* line) {
-  char buf[fanlogic::MCU_LINE_MAX];
+  if (!fanlogic::rawLineFits(line)) {              // never cut short: the MCU would get another line
+    con("[mcu] refused: line too long (%u characters at most)", (unsigned)(fanlogic::MCU_LINE_MAX - 1));
+    return true;
+  }
+  char buf[fanlogic::MCU_LINE_MAX] = {0};
   strncpy(buf, line, sizeof(buf) - 1);
-  buf[sizeof(buf) - 1] = '\0';
   return s_raw && xQueueSend(s_raw, buf, 0) == pdTRUE;
 }
 

@@ -29,7 +29,10 @@ static std::atomic<bool>  s_reboot{false};
 static char               s_node[25] = {0};
 static char               s_fw[28] = {0};
 static ClipHooks          s_clips = {};
-static char               s_scratch[4096];        // "s" replies; HTTP task only (0.8.6: was 8 KB; heap is tight)
+// "s" replies; HTTP task only (0.8.6: was 8 KB; heap is tight). About 100
+// names of up to 38 characters; a longer listing is cut at the end
+// (fanlogic::listClips still reads the rest, until the MCU is quiet).
+static char               s_scratch[4096];
 static char               s_last[608] = "none";   // the last clip PUT/DELETE, for /api/info
 // WIFI_EVENT_STA_DISCONNECTED since maintenance started, and the last
 // reason code (wifi_event_sta_disconnected_t.reason). Written by the event
@@ -153,7 +156,13 @@ static esp_err_t handleOta(httpd_req_t* r) {
   if (refusedForUpload(r)) return ESP_FAIL;   // body unread: close
   if (r->content_len == 0) return sendJson(r, "400 Bad Request", "{\"ok\":false,\"err\":\"length\"}");
   const esp_partition_t* part = esp_ota_get_next_update_partition(nullptr);
-  if (!part || r->content_len > part->size) return sendJson(r, "400 Bad Request", "{\"ok\":false,\"err\":\"length\"}");
+  // Every error reply below that leaves body bytes unread returns ESP_FAIL
+  // after it, as the clip PUT does (failPut): httpd then closes the socket
+  // instead of draining the body 32 bytes per recv.
+  if (!part || r->content_len > part->size) {
+    sendJson(r, "400 Bad Request", "{\"ok\":false,\"err\":\"length\"}");
+    return ESP_FAIL;
+  }
   esp_ota_handle_t ota = 0;
   // OTA_WITH_SEQUENTIAL_WRITES: esp_ota_write() erases each sector as the
   // image reaches it, instead of esp_ota_begin() erasing the whole image
@@ -182,7 +191,8 @@ static esp_err_t handleOta(httpd_req_t* r) {
     char body[96];
     snprintf(body, sizeof(body), "{\"ok\":false,\"err\":\"%s\"}", esp_err_to_name(err));
     ESP_LOGE(TAG, "OTA failed: %s", esp_err_to_name(err));
-    return sendJson(r, "500 Internal Server Error", body);   // docs/MAINTENANCE_API.md
+    esp_err_t sent = sendJson(r, "500 Internal Server Error", body);   // docs/MAINTENANCE_API.md
+    return left > 0 ? ESP_FAIL : sent;                 // body unread: close (a failed verify has read it all)
   }
   ESP_LOGI(TAG, "OTA image (%u bytes) staged in %s", (unsigned)r->content_len, part->label);
   esp_err_t sent = sendJson(r, "200 OK", "{\"ok\":true}");
@@ -253,7 +263,7 @@ static esp_err_t handleTrace(httpd_req_t* r) {
     unsigned char c = (unsigned char)*p;
     if (c == 0 || o + 5 > sizeof(out)) {
       out[o] = '\0';
-      httpd_resp_sendstr_chunk(r, out);
+      if (o > 0) httpd_resp_sendstr_chunk(r, out);     // never an empty chunk: that one ends the reply
       o = 0;
       if (c == 0) break;
     }

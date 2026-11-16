@@ -45,6 +45,13 @@ static wcb::WcbNode        s_node;
 static MeshRadioIdf        s_radio;
 static bool                s_wifiOk = false;
 static bool                s_radioUp = false;
+// The mesh identity this boot runs on (id, octets, channel, password).
+// #HLZ / "mesh" changes to s_cfg apply after a reboot, so every radio
+// restart (maintenance, #HLFY) must use these, as s_node still does.
+static nodecfg::NodeConfig s_radioCfg;
+static bool                s_nodeBegun = false;
+static uint32_t            s_radioRetryMs = 0;
+static constexpr uint32_t  RADIO_RETRY_MS = 5000;
 static bool                s_maintOk = false;        // STA netif + handlers ready
 static maint::MaintFsm     s_maint;
 static maint::ValidityGate s_gate;
@@ -111,7 +118,8 @@ static void setTxPower(int quarterDbm) {
 // On the mesh the fan transmits at the saved #HLFO power (0.9.10): at
 // volume 3 its own 20 dBm bursts dip the supply and start ~10 s silences.
 static bool radioStart() {
-  s_radioUp = s_wifiOk && s_radio.start(s_cfg, s_node);
+  s_radioRetryMs = nowMs();
+  s_radioUp = s_wifiOk && s_radioCfg.password[0] && s_radio.start(s_radioCfg, s_node);
   if (s_radioUp) setTxPower(fanlogic::txPowerQuarterDbm(s_txDbm.load()));
   return s_radioUp;
 }
@@ -205,7 +213,7 @@ static void loudLoop() {
         if (acked) con("[test] receive-only hold: %u unicast frames reached the fan (each ACKed on air)", acked);
         break;
       }
-      if (s_cfg.password[0] && radioStart()) { s_node.rejoin(); break; }
+      if (radioStart()) { s_node.rejoin(); break; }
       con("[test] the radio did not come back: restarting");
       vTaskDelay(pdMS_TO_TICKS(100));
       fanMcuHoldForRestart();
@@ -235,7 +243,7 @@ static void loudLoop() {
 // no retry; no WCB accepts it: wrong size and magic). Runs on the probe task.
 static bool probeSend(const uint8_t* data, size_t len) {
   uint8_t mac[6];
-  wcb::groupMac(s_cfg.oct2, s_cfg.oct3, mac);
+  wcb::groupMac(s_radioCfg.oct2, s_radioCfg.oct3, mac);
   return esp_now_send(mac, data, len) == ESP_OK;
 }
 
@@ -397,7 +405,7 @@ static void maintLoop() {
     case maint::Action::RETURN_TO_MESH:
       con("[maint] returning to mesh");
       maintidf::stop();
-      if (s_cfg.password[0] && radioStart()) s_node.rejoin();
+      if (radioStart()) s_node.rejoin();   // retried from the mesh task's loop if it fails
       if (fanlogic::maintVolumeValid(s_mv)) { s_mvDue = true; s_mvAt = nowMs() + MAINT_VOLUME_BACK_MS; }
       break;
     case maint::Action::NONE:
@@ -506,6 +514,7 @@ static void handleConsole(char* line) {
       esp_restart();
       return;
     default:
+      if (sagRunning()) { con("[mesh] refused: no NVS writes while #HLFE/#HLFJ has the brownout reset off"); return; }
       if (nodecfg::applyUsb(u, s_cfg) && configstore::save(s_cfg)) con("OK saved (mesh restart to apply mesh settings)");
       else con("ERROR save failed");
       return;
@@ -551,6 +560,7 @@ static bool meshBegin() {
     con("[mesh] start FAILED (see messages above)");
     return false;
   }
+  s_nodeBegun = true;
   con("[mesh] node %u \"%s\" on channel %u, replies %s", s_cfg.id, s_cfg.alias, s_cfg.channel,
       s_cfg.replies ? "broadcast" : "off");
   return true;
@@ -559,12 +569,15 @@ static bool meshBegin() {
 // OTA validity: a new image in PENDING_VERIFY keeps itself only
 // if, within 30 s, the mesh is up (when configured) and the MCU answered.
 static void gateLoop() {
-  if (s_node.started()) s_gate.meshUp();
+  // "Reached the mesh" = a frame from another node of this mesh was received
+  // on the right MAC (WCBs send a heartbeat every ~10 s). A radio that
+  // merely initialised proves nothing about the new image.
+  if (s_node.started() && s_radio.macOk() && s_node.counters().rxOk > 0) s_gate.meshUp();
   if (fanMcuAnswered()) s_gate.mcuOk();
   switch (s_gate.poll(nowMs())) {
     case maint::Verdict::VALID:
-      esp_ota_mark_app_valid_cancel_rollback();
-      con("[ota] new image marked valid");
+      if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) con("[ota] new image marked valid");
+      else con("[ota] ERROR: the new image could not be marked valid");
       break;
     case maint::Verdict::INVALID:
       con("[ota] mesh not up within 30 s: rolling back");
@@ -580,21 +593,28 @@ static void gateLoop() {
 // Three short power cycles (each 2-10 s on) enter maintenance on profile 1
 // (or 2 if 1 is unset) without the mesh: the way in when the mesh link is down.
 static void cyclesLoop() {
+  // No NVS writes while #HLFE/#HLFJ has the brownout reset off: the count
+  // to store waits here (-1: none) and is written once the instrument ends.
+  static int pending = -1;
   switch (s_cycles.poll(nowMs(), s_storedCycles)) {
     case maint::PowerCycleTrigger::Action::COUNT:
-      configstore::savePowerCycles(s_cycles.newCount());
+      pending = s_cycles.newCount();
       con("[maint] power cycle %u of %u (cycle again within 10 s for maintenance)", s_cycles.newCount(), maint::PC_CYCLES);
       break;
     case maint::PowerCycleTrigger::Action::ENTER_MAINT:
-      configstore::savePowerCycles(0);
+      pending = 0;
       con("[maint] %u power cycles: entering maintenance mode", maint::PC_CYCLES);
       enterMaint(s_cfg.profile[0].ssid[0] ? 1 : 2);
       break;
     case maint::PowerCycleTrigger::Action::CLEAR:
-      configstore::savePowerCycles(0);
+      pending = 0;
       break;
     case maint::PowerCycleTrigger::Action::NONE:
       break;
+  }
+  if (pending >= 0 && !sagRunning()) {
+    configstore::savePowerCycles((uint8_t)pending);
+    pending = -1;
   }
 }
 
@@ -636,6 +656,13 @@ static void meshTask(void*) {
     recordLoudTest();
     pumpTerm();
     maintLoop();
+    // The radio failed to come back after maintenance: keep trying, or the
+    // fan stays off the mesh until its next power cycle.
+    if (s_nodeBegun && !s_radioUp && s_maint.state() == maint::State::MESH && !s_loud.active() && !sagRunning() &&
+        (uint32_t)(nowMs() - s_radioRetryMs) >= RADIO_RETRY_MS) {
+      con("[mesh] radio is down; restarting it");
+      if (radioStart()) s_node.rejoin();
+    }
     maintVolumeLoop();
     vTaskDelay(pdMS_TO_TICKS(LOOP_MS));
   }
@@ -656,6 +683,7 @@ void fanMeshStart() {
   const esp_partition_t* run = esp_ota_get_running_partition();
   if (run) strncpy(s_slot, run->label, sizeof(s_slot) - 1);
   configstore::load(s_cfg, DEFAULT_ID, DEFAULT_ALIAS);
+  s_radioCfg = s_cfg;
   s_txDbm.store(configstore::loadTxPower());
   s_lines = xQueueCreate(4, CON_LINE_MAX + 1);
   // The saved Bluetooth choice (#HLFA, off when never saved), applied once by

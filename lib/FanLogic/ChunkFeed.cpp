@@ -30,6 +30,7 @@ void ChunkFeed::fail(char end, ClipErr err) {
 }
 
 void ChunkFeed::abort() { fail('a', ClipErr::ABORT); }
+void ChunkFeed::flashFailed() { fail('f', ClipErr::FLASH); }
 
 size_t ChunkFeed::write(size_t pos, const uint8_t* data, size_t n) {
   if (state_ == BodyState::FAILED || pos > staged_) return 0;

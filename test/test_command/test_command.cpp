@@ -1,4 +1,6 @@
 #include <unity.h>
+#include <stdio.h>
+#include <initializer_list>
 #include "command.h"
 
 using namespace holofan;
@@ -147,6 +149,58 @@ void test_bad_slot_fails() {
   TEST_ASSERT_FALSE(parseCommand("#HLFT-1", c));
 }
 void test_bad_loop_fails()     { Cmd c; TEST_ASSERT_FALSE(parseCommand("#HLFLX", c)); }
+
+static void reject(const char* line) {
+  Cmd c;
+  TEST_ASSERT_FALSE_MESSAGE(parseCommand(line, c), line);
+}
+
+// Review 2026-11: every command is the whole line. The commands without an
+// argument took any text after the letter, and G, B, V, L and W stopped
+// reading at the first character they did not know.
+void test_no_argument_commands_take_nothing_after() {
+  static const char* const BARE[] = {"#HLF1", "#HLF0", "#HLFP", "#HLFN", "#HLFR", "#HLFM", "#HLFU", "#HLFC", "#HLFD",
+                                     "#HLFS", "#HLFQ"};
+  for (const char* b : BARE) {
+    Cmd c;
+    TEST_ASSERT_TRUE_MESSAGE(parseCommand(b, c), b);
+    char line[16];
+    for (const char* tail : {"x", "0", "1", " ", " 1", "omething"}) {
+      snprintf(line, sizeof(line), "%s%s", b, tail);
+      reject(line);
+    }
+  }
+  reject("#HLFSomething");
+  reject("#HLFPxyz");
+  reject("#HLF10");
+}
+
+void test_numbers_are_digits_only_to_the_end() {
+  for (const char* line : {"#HLFV3x", "#HLFV 2", "#HLFV+2", "#HLFV-2", "#HLFV02", "#HLFV22", "#HLFV", "#HLFV2 ",
+                           "#HLFV2.0", "#HLFV4"})
+    reject(line);
+  for (const char* line : {"#HLFB02", "#HLFB2x", "#HLFB 2", "#HLFB+2", "#HLFB", "#HLFB12", "#HLFB0"}) reject(line);
+  for (const char* line : {"#HLFG2abc", "#HLFG 2", "#HLFG+2", "#HLFG-2", "#HLFG", "#HLFG2 ", "#HLFG1.5", "#HLFG0",
+                           "#HLFG00", "#HLFG1000", "#HLFGx"})
+    reject(line);
+  expect("#HLFG1", CmdType::PLAY_INDEX, 1);
+  expect("#HLFG32", CmdType::PLAY_INDEX, 32);
+  expect("#HLFG03", CmdType::PLAY_INDEX, 3);        // leading zeros as #HLFT takes them
+  expect("#HLFG999", CmdType::PLAY_INDEX, 999);     // out of the catalog: err=badindex, from the controller
+  for (int v = 1; v <= 3; v++) {
+    char line[8];
+    snprintf(line, sizeof(line), "#HLFV%d", v);
+    expect(line, CmdType::VOLUME, v);
+    snprintf(line, sizeof(line), "#HLFB%d", v);
+    expect(line, CmdType::BRIGHTNESS, v);
+  }
+}
+
+void test_loop_and_switcher_take_one_character() {
+  for (const char* line : {"#HLFLAx", "#HLFLOO", "#HLFLA ", "#HLFL", "#HLFLa", "#HLFLAll", "#HLFW1x", "#HLFW10",
+                           "#HLFW01", "#HLFW", "#HLFW2", "#HLFW 1", "#HLFWon"})
+    reject(line);
+}
 void test_wrong_prefix_fails() { Cmd c; TEST_ASSERT_FALSE(parseCommand("#HLU", c)); TEST_ASSERT_FALSE(parseCommand("garbage", c)); TEST_ASSERT_FALSE(parseCommand("#HLF", c)); }
 
 int main(int, char**) {
@@ -177,6 +231,9 @@ int main(int, char**) {
   RUN_TEST(test_volume_cap_command_is_gone);
   RUN_TEST(test_bad_slot_fails);
   RUN_TEST(test_bad_loop_fails);
+  RUN_TEST(test_no_argument_commands_take_nothing_after);
+  RUN_TEST(test_numbers_are_digits_only_to_the_end);
+  RUN_TEST(test_loop_and_switcher_take_one_character);
   RUN_TEST(test_wrong_prefix_fails);
   return UNITY_END();
 }

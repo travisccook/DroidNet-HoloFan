@@ -15,7 +15,7 @@ void fanMeshConsoleLine(const char* line);
 // node is on the mesh, or a #HLFY hold keeps lines for after it). Any task;
 // a racy read is fine (0.9.8: the MCU task latches reports when false).
 bool fanMeshCanSend();
-// The mesh TX power in dBm that #HLFO saved (20 when never set). Any task.
+// The mesh TX power in dBm that #HLFO saved (8 when never set). Any task.
 int fanMeshTxDbm();
 
 #endif

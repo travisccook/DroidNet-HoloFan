@@ -18,6 +18,15 @@ constexpr size_t   SPI_WINDOW = SPI_FRAME * SPI_WINDOW_FRAMES;   // 28800
 constexpr size_t   CLIP_MAX_BYTES = 128u * 1024u * 1024u;
 constexpr uint32_t CREATE_TIMEOUT_MS = 10000;                     // stock: ~10 s for CT/CF
 constexpr uint32_t VERDICT_TIMEOUT_MS = 10000;
+// What the MCU prints right after the last frame is kept in `scratch` and
+// searched for the verdict before the wait for it (scratch at least this
+// big, else that output is dropped as before). A verdict cut off at the end
+// of those bytes ("R", "RT", "RF") gets up to VERDICT_CUT_READS more reads,
+// each until quiet for VERDICT_CUT_QUIET_MS (at most VERDICT_CUT_MAX_MS).
+constexpr size_t   VERDICT_TAIL_MIN = 64;
+constexpr int      VERDICT_CUT_READS = 3;
+constexpr uint32_t VERDICT_CUT_QUIET_MS = 20;
+constexpr uint32_t VERDICT_CUT_MAX_MS = 100;
 constexpr uint32_t DELETE_READ_MS = 3000;                         // `u` is never ACKed
 constexpr int      DELETE_LIST_TRIES = 3;                         // listings that may confirm a delete
 // The MCU drops input while it is busy (bench trace 2026-10-06): after a
@@ -26,9 +35,8 @@ constexpr int      DELETE_LIST_TRIES = 3;                         // listings th
 constexpr uint32_t PAUSE_TIMEOUT_MS = 2000;                       // for "mculog:pause"
 constexpr uint32_t SETTLE_QUIET_MS = 300;
 constexpr uint32_t SETTLE_MAX_MS = 3000;
-// An "s" reply may continue after a gap: keep reading until quiet this long.
-constexpr uint32_t LIST_QUIET_MS = 1000;
-constexpr uint32_t LIST_MAX_MS = 3000;
+// LIST_QUIET_MS / LIST_MAX_MS (an "s" reply may continue after a gap) are in
+// FanController.h.
 
 enum class ClipErr { OK, NAME, LENGTH, EXISTS, NOT_FOUND, STILL, CF, RF, SYNC, SPI, RECV, NOVERDICT, FLASH, ABORT, BUSY };
 // "ok", "name", "length", "exists", "notfound", "still", "cf", "rf", "sync",
@@ -272,14 +280,18 @@ class PutSource : public FrameSource {
 // arriving and at once when it is full or the body has ended; the GPIO18
 // credit check before every frame and the GPIO18 wait after every 20
 // frames; after a failed body the rest of the ring, then zeros to the
-// padded size; RT/RF; cleanup on failure. `pace`: see PaceConfig. `frame` is one SPI_FRAME buffer
+// padded size; RT/RF (also when it arrived with the last frame's output);
+// cleanup on failure (settle, "u", list). `pace`: see PaceConfig. `frame` is one SPI_FRAME buffer
 // (DMA-capable on the fan); `scratch` holds "s" replies.
 UploadResult uploadClip(McuLink& link, ClipSpi& spi, FrameSource& src, Clock& clock,
                         const char* name, size_t size, uint8_t* frame, char* scratch, size_t scratchSize,
                         const PaceConfig& pace = PaceConfig());
 
 // The MCU's "s" reply into scratch, read until quiet for LIST_QUIET_MS (the
-// reply may continue after a gap). Returns the bytes read.
+// reply may continue after a gap; at most LIST_MAX_MS). A reply longer than
+// scratch is cut there, and the rest is still read (and dropped) until
+// quiet, so the next line does not reach an MCU that is still printing.
+// Returns the bytes read, which is more than scratch holds after a cut.
 int listClips(McuLink& link, char* scratch, size_t scratchSize);
 
 // Delete one clip: 400-class NAME if !isClipName; NOT_FOUND if the "s" list
@@ -288,7 +300,10 @@ int listClips(McuLink& link, char* scratch, size_t scratchSize);
 // there; OK only from a listing that has every other clip of the first one (an
 // empty or cut-off reply is listed again, up to DELETE_LIST_TRIES; none usable:
 // STILL).
-// `scratch` holds the "s" reply (8 KB is enough for 100 names).
+// `scratch` holds the "s" reply. The fan's is 4 KB: about 100 names of up to
+// 38 characters. A longer listing is cut at the buffer's end (the rest is
+// read and dropped until the MCU is quiet), so a clip listed past the cut
+// counts as not listed.
 // force: skip the "listed" check and send "u" anyway (for a file the MCU's
 // list never shows); then OK unless the name is still listed.
 ClipErr deleteClip(McuLink& link, const char* name, char* scratch, size_t scratchSize, bool force = false);

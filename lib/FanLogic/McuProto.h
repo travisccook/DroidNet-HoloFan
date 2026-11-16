@@ -28,8 +28,13 @@ constexpr int VOLUME_MAX = 3;
 // commands that cannot change or erase the SD card (never v, u, w, y).
 bool rawMeshAllowed(const char* cmd);
 
-// A whole #HLFX line ("<cmd> [args]", leading spaces skipped): cmd passes
-// rawMeshAllowed, and the volume command only as "m <1..VOLUME_MAX>".
+// A raw line ("<cmd> [args]", as typed) fits the MCU task's raw-line queue
+// (MCU_LINE_MAX - 1 characters): a longer one is refused, never cut.
+bool rawLineFits(const char* line);
+
+// A whole #HLFX line ("<cmd> [args]", leading spaces skipped): it fits
+// (rawLineFits, leading spaces included), cmd passes rawMeshAllowed, and the
+// volume command only as "m <1..VOLUME_MAX>".
 bool rawMeshLineAllowed(const char* line);
 
 // A raw line ("<cmd> [args]") that may change the MCU's settings or clip:

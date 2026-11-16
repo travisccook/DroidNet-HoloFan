@@ -208,6 +208,27 @@ void test_raw_mesh_line_volume_levels() {
   TEST_ASSERT_TRUE(rawMeshLineAllowed("  m 2"));
 }
 
+// Review 2026-11: the allowlist read the whole line, then the line was cut
+// to the queue's MCU_LINE_MAX - 1 characters: a line that does not fit is refused.
+void test_raw_line_longer_than_the_queue_is_refused() {
+  std::string fits = "t " + std::string(MCU_LINE_MAX - 3, 'a');           // MCU_LINE_MAX - 1 characters
+  TEST_ASSERT_EQUAL(MCU_LINE_MAX - 1, fits.size());
+  TEST_ASSERT_TRUE(rawLineFits(fits.c_str()));
+  TEST_ASSERT_TRUE(rawMeshLineAllowed(fits.c_str()));
+  std::string over = fits + "a";
+  TEST_ASSERT_FALSE(rawLineFits(over.c_str()));
+  TEST_ASSERT_FALSE(rawMeshLineAllowed(over.c_str()));
+  // Cut at MCU_LINE_MAX - 1 this would have been "m 3": volume 3 from a line that is not one.
+  std::string padded = std::string(MCU_LINE_MAX - 4, ' ') + "m 3";
+  TEST_ASSERT_TRUE(rawMeshLineAllowed(padded.c_str()));
+  TEST_ASSERT_FALSE(rawMeshLineAllowed((padded + "3").c_str()));          // "m 33" anyway
+  TEST_ASSERT_FALSE(rawMeshLineAllowed((" " + padded).c_str()));          // too long, though "m 3" is allowed
+  std::string spaced = "t 03-Rings.bin" + std::string(MCU_LINE_MAX, ' ') + "x";
+  TEST_ASSERT_FALSE(rawMeshLineAllowed(spaced.c_str()));
+  TEST_ASSERT_FALSE(rawLineFits(nullptr));
+  TEST_ASSERT_TRUE(rawLineFits(""));
+}
+
 void test_raw_mesh_line_other_commands() {
   TEST_ASSERT_TRUE(rawMeshLineAllowed("t 03-Rings.bin"));
   TEST_ASSERT_TRUE(rawMeshLineAllowed("get_playinfo"));
@@ -356,6 +377,7 @@ int main(int, char**) {
   RUN_TEST(test_mcu_log_queue_keeps_oldest_and_counts_drops);
   RUN_TEST(test_raw_mesh_line_volume_levels);
   RUN_TEST(test_raw_mesh_line_other_commands);
+  RUN_TEST(test_raw_line_longer_than_the_queue_is_refused);
   RUN_TEST(test_build_plain_and_with_args);
   RUN_TEST(test_build_command_with_digits);
   RUN_TEST(test_v_is_never_built);

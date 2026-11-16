@@ -25,7 +25,13 @@ constexpr uint32_t SESSION_DRY_MS = 30000;   // a burst session's default dry li
 // 0.8.2: a reserve session fails fast: the MCU aborts after ~3-5 s of SPI
 // silence, so waiting longer than this for the body only wastes the file.
 constexpr uint32_t SESSION_RESERVE_DRY_MS = 4000;
-constexpr size_t   SESSION_PRE_MAX = 617;    // accepted limit; ChunkFeed clamps to the ring minus one window (574 since 0.9.18)
+// The fan's staging ring: the spare OTA slot (0xF0000 bytes) holds 5 ring
+// blocks, and one erase block of them stays free (FrameRing::capacity): 594
+// frames. The largest prefill is that minus one window, as ChunkFeed::begin
+// clamps it: 574 frames. A larger pre= is refused, not clamped.
+constexpr size_t   SESSION_RING_BYTES = 5 * RING_BLOCK;
+constexpr size_t   SESSION_PRE_MAX = (SESSION_RING_BYTES - RING_ERASE_BLOCK) / SPI_FRAME - SPI_WINDOW_FRAMES;
+static_assert(SESSION_PRE_MAX == 574, "pre= limit: update docs/MAINTENANCE_API.md and tools/bench/clip_put.py with it");
 inline PaceConfig reservePace() {
   PaceConfig p;
   p.pace = Pace::RESERVE;
@@ -40,7 +46,7 @@ struct UploadQuery {
   bool      hasId = false;
   SpiConfig spi;
   // Timing knobs (OPEN): pace reserve|burst (default reserve), igap
-  // 0..60000 ms, keep 1000..10000 ms (reserve), pre 20..617 frames (0 = the
+  // 0..60000 ms, keep 1000..10000 ms (reserve), pre 20..574 frames (0 = the
   // ring minus one window), dry 1000..600000 ms (default 4000 for reserve,
   // else 30000).
   PaceConfig pace = reservePace();
@@ -54,7 +60,7 @@ struct UploadQuery {
 //          1..CLIP_MAX_BYTES) required; mhz and clk optional (as on the
 //          single PUT); pace=reserve|burst (trickle: QUERY since 0.9.1,
 //          it waits inside a window), igap=<0..60000>,
-//          keep=<1000..10000>, pre=<20..617>, dry=<1000..600000> and
+//          keep=<1000..10000>, pre=<20..574> (SESSION_PRE_MAX), dry=<1000..600000> and
 //          dark=0|1 (0.9.8: PaceConfig::dark) optional (each once); igap must be below dry, and for reserve
 //          keep too (dry defaults to 4000 for reserve, else 30000), else
 //          QUERY.

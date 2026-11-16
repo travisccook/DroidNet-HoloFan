@@ -401,8 +401,12 @@ esp_err_t handleChunk(httpd_req_t* r) {
         // segments in flight was followed by a retransmit timeout (9 per 11
         // erases) and uploads got slower; erased here, one 4,377,600-byte
         // clip took 95-123 s where sector erases took 152-174 s.
-        if (s_ring.popped() - s_erasedAtPop >= (uint32_t)fanlogic::SPI_WINDOW_FRAMES) {
-          s_ring.eraseAhead(fanlogic::SPI_WINDOW + fanlogic::SPI_FRAME);
+        // Only while the feed still takes data (not once the body is
+        // complete, failed or the session over); a flash error fails the
+        // feed as a failed push does ('f', err "flash").
+        if (activeLocked() && s_feed.state() == BodyState::ARRIVING &&
+            s_ring.popped() - s_erasedAtPop >= (uint32_t)fanlogic::SPI_WINDOW_FRAMES) {
+          if (s_ring.eraseAhead(fanlogic::SPI_WINDOW + fanlogic::SPI_FRAME) < 0) s_feed.flashFailed();
           s_erasedAtPop = s_ring.popped();
         }
         used = s_feed.write(pos, s_rx + done, (size_t)n - done);

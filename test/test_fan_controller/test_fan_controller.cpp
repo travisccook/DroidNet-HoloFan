@@ -66,8 +66,14 @@ class FakeMcu : public McuLink {
     return -1;
   }
   std::vector<size_t> settles;   // lines.size() at each read-only settle (collect with no buffer)
-  int collect(char* buf, size_t, uint32_t, uint32_t) override {
-    if (!buf) settles.push_back(lines.size());
+  std::vector<uint32_t> settleQuiet;   // and its quietMs
+  int collect(char* buf, size_t, uint32_t quietMs, uint32_t) override {
+    if (!buf) { settles.push_back(lines.size()); settleQuiet.push_back(quietMs); }
+    return 0;
+  }
+  // quietMs of the settle right after line `i`, 0 if there was none.
+  uint32_t settleQuietAfter(size_t i) const {
+    for (size_t k = 0; k < settles.size(); k++) if (settles[k] == i + 1) return settleQuiet[k];
     return 0;
   }
   // The MCU was left to settle right after line `i` (0-based) and before the next one.
@@ -991,6 +997,94 @@ void test_play_slot_reaches_past_the_catalog() {
   TEST_ASSERT_EQUAL_STRING("t 39-Clip.bin\n", mcu->last().c_str());
 }
 
+static std::string longListing(int names) {
+  std::string big;
+  for (int i = 0; i < names; i++) {
+    char l[32];
+    snprintf(l, sizeof(l), "%02d-LongClipName.bin\n", i);
+    big += l;
+  }
+  return big;
+}
+
+// Review 2026-11: transact() returns when the 1 KB reply buffer is full, with
+// the MCU still printing the listing; the next line (get_playinfo) then went
+// to a busy MCU, which drops or misreads it. The rest is drained first.
+void test_catalog_longer_than_the_reply_buffer_is_drained_first() {
+  mcu->list = longListing(80);                       // 1680 bytes
+  fan->begin(0);
+  size_t s = mcu->indexOf("s\n");
+  TEST_ASSERT_TRUE(s != (size_t)-1);
+  TEST_ASSERT_TRUE(mcu->settledAfter(s));
+  TEST_ASSERT_EQUAL_UINT32(LIST_QUIET_MS, mcu->settleQuietAfter(s));
+  TEST_ASSERT_EQUAL_STRING("get_playinfo\n", mcu->lines[s + 1].c_str());
+  TEST_ASSERT_EQUAL(CATALOG_MAX_TEST, fan->catalog().count);
+  run(CmdType::CATALOG_REFRESH);                     // #HLFC
+  size_t s2 = mcu->indexOf("s\n", 1);
+  TEST_ASSERT_TRUE(s2 != (size_t)-1);
+  TEST_ASSERT_TRUE(mcu->settledAfter(s2));
+}
+
+// A listing that fits needs no extra wait.
+void test_catalog_that_fits_is_not_settled() {
+  fan->begin(0);
+  size_t s = mcu->indexOf("s\n");
+  TEST_ASSERT_TRUE(s != (size_t)-1);
+  TEST_ASSERT_FALSE(mcu->settledAfter(s));
+}
+
+// The same for #HLFT's listing: "t <name>" does not follow a cut listing at once.
+void test_play_slot_after_a_cut_listing_settles_before_t() {
+  mcu->list = longListing(80);
+  fan->begin(0);
+  run(CmdType::PLAY_SLOT, 3);
+  size_t s = mcu->indexOf("s\n", 1);
+  TEST_ASSERT_TRUE(s != (size_t)-1);
+  TEST_ASSERT_TRUE(mcu->settledAfter(s));
+  TEST_ASSERT_EQUAL_UINT32(LIST_QUIET_MS, mcu->settleQuietAfter(s));
+  TEST_ASSERT_EQUAL_STRING("t 03-LongClipName.bin\n", mcu->lines[s + 1].c_str());
+}
+
+// Review 2026-11: clip names went into RTERM lines as the MCU gave them. A
+// '^' splits a WCB line and other bytes are not plain text: as #HLFS's
+// name=, every such byte is shown as '?'.
+void test_boot_line_shows_a_safe_clip_name() {
+  mcu->playinfo = "PlayInfo \"02-Na^me \x01x.bin\" playing 8 24\n";
+  fan->begin(0);
+  char out[160];
+  TEST_ASSERT_TRUE(fan->formatBoot(out, sizeof(out)) > 0);
+  TEST_ASSERT_EQUAL_STRING("[fan] MCU at connect: ble on, loop all, br 2, vol 3, angle 164; playing 02-Na?me??x.bin 8/24",
+                           out);
+}
+
+void test_unprompted_clip_change_shows_safe_names() {
+  mcu->setting = "setting on one 2 2 164 F-S12\n";
+  mcu->playinfo = "PlayInfo \"02-A^B.bin\" playing 8 24\n";
+  fan->begin(0);
+  mcu->playinfo = "PlayInfo \"03-C D^.bin\" playing 1 24\n";
+  fan->poll(POLL_MS);
+  char out[120];
+  TEST_ASSERT_TRUE(fan->takeUnprompted(out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("clip 02-A?B.bin->03-C?D?.bin", out);
+  TEST_ASSERT_EQUAL_STRING("03-C?D?.bin", fan->status().fileName);   // #HLFS, as before
+}
+
+void test_restore_report_shows_a_safe_clip_name() {
+  mcu->setting = "setting on one 2 2 164 F-S12\n";
+  mcu->playinfo = "PlayInfo \"02-Na^me.bin\" playing 8 24\n";
+  mcu->list = "02-Na^me.bin\n04-Name.bin\n";
+  fan->begin(0);
+  fan->beginLease();
+  mcu->playinfo = "PlayInfo \"04-Name.bin\" playing 1 24\n";
+  fan->endLease(true);
+  fan->poll(POLL_MS);
+  TEST_ASSERT_EQUAL(1, mcu->count("t 02-Na^me.bin\n"));              // the MCU still gets the real name
+  char out[120];
+  TEST_ASSERT_TRUE(fan->takeLeaseReport(out, sizeof(out)));
+  TEST_ASSERT_NOT_NULL(strstr(out, "restored clip 02-Na?me.bin"));
+  TEST_ASSERT_NULL(strchr(out, '^'));
+}
+
 void test_play_slot_needs_the_mcu() {
   mcu->alive = false;
   fan->begin(0);
@@ -1203,6 +1297,12 @@ int main(int, char**) {
   RUN_TEST(test_play_slot_missing_is_noslot);
   RUN_TEST(test_play_slot_reaches_past_the_catalog);
   RUN_TEST(test_play_slot_needs_the_mcu);
+  RUN_TEST(test_catalog_longer_than_the_reply_buffer_is_drained_first);
+  RUN_TEST(test_catalog_that_fits_is_not_settled);
+  RUN_TEST(test_play_slot_after_a_cut_listing_settles_before_t);
+  RUN_TEST(test_boot_line_shows_a_safe_clip_name);
+  RUN_TEST(test_unprompted_clip_change_shows_safe_names);
+  RUN_TEST(test_restore_report_shows_a_safe_clip_name);
   RUN_TEST(test_unparseable_playinfo_keeps_ready);
   RUN_TEST(test_playinfo_name_sanitized);
   RUN_TEST(test_catalog_never_carries_caret);

@@ -26,6 +26,8 @@ struct Cmd {
 };
 
 // Parse a "#HLF<action>[param]" line into a Cmd. Returns false on unknown/invalid.
+// The whole line must be the command: text after it, or a number that is not
+// plain digits ("#HLFV3x", "#HLFV 2", "#HLFV+2", "#HLFPx"), is invalid.
 bool parseCommand(const char* line, Cmd& out);
 
 // Longest reply that fits one mesh command with the |CRC suffix.

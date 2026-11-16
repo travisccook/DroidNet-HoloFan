@@ -7,8 +7,27 @@ namespace fanlogic {
 using holofan::CmdType;
 using holofan::FanState;
 
-static constexpr size_t REPLY_BUF = 1024;   // a 32-name listing is about 450 bytes
+// A 32-name listing is about 450 bytes. A longer one is cut here: the catalog
+// then holds the names that fit, and the rest is drained (settleIfCut).
+static constexpr size_t REPLY_BUF = 1024;
 enum : uint8_t { OV_VOLUME = 1, OV_LOOP = 2, OV_BRIGHTNESS = 4, OV_CLIP = 8 };   // overridden_ bits
+
+// A clip name as it may go into a mesh reply or an RTERM line: plain ASCII
+// without spaces or '^' (the WCB reply delimiter), anything else as '?'.
+static void meshSafe(char* s) {
+  for (; *s; s++) {
+    unsigned char b = (unsigned char)*s;
+    if (b < 0x21 || b > 0x7E || b == '^') *s = '?';
+  }
+}
+
+// `name` cut to `size - 1` bytes and made meshSafe, into out.
+static const char* meshSafeCopy(const char* name, char* out, size_t size) {
+  strncpy(out, name, size - 1);
+  out[size - 1] = '\0';
+  meshSafe(out);
+  return out;
+}
 
 void FanController::setErr(const char* e) {
   strncpy(st_.err, e, sizeof(st_.err) - 1);
@@ -204,7 +223,9 @@ void FanController::restoreClip() {
     if (!act("t", pre_.clip)) { clipPending_ = false; return; }
   }
   if (!pre_.playing) act("h");                   // it was paused (or idle) before the lease
-  snprintf(w, sizeof(w), "restored clip %.40s%s", pre_.clip, pre_.playing ? "" : " (paused)");
+  char shown[41];
+  snprintf(w, sizeof(w), "restored clip %s%s", meshSafeCopy(pre_.clip, shown, sizeof(shown)),
+           pre_.playing ? "" : " (paused)");
   reportLease(w);
   clipPending_ = false;
 }
@@ -271,18 +292,16 @@ bool FanController::refreshPlay() {
   if (expectClip_ && due(now_, expectClipUntil_)) expectClip_ = false;
   if (clipKnown_ && baseValid_ && !expectClip_ && !st_.loopAll && p.name[0] && playing_[0] &&
       strcmp(playing_, p.name) != 0) {
-    char text[UNPROMPTED_MAX];
-    snprintf(text, sizeof(text), "clip %.40s->%.40s", playing_, p.name);
+    char text[UNPROMPTED_MAX], was[41], now[41];
+    snprintf(text, sizeof(text), "clip %s->%s", meshSafeCopy(playing_, was, sizeof(was)),
+             meshSafeCopy(p.name, now, sizeof(now)));
     report(text);
   }
   clipKnown_ = p.name[0] != '\0';
   strcpy(playing_, p.name);
   strncpy(st_.fileName, p.name, sizeof(st_.fileName) - 1);
   st_.fileName[sizeof(st_.fileName) - 1] = '\0';
-  for (char* c = st_.fileName; *c; c++) {              // replies are plain ASCII, no '^' (WCB reply delimiter)
-    unsigned char b = (unsigned char)*c;
-    if (b < 0x21 || b > 0x7E || b == '^') *c = '?';
-  }
+  meshSafe(st_.fileName);                              // replies are plain ASCII, no '^' (WCB reply delimiter)
   st_.play = p.playing ? holofan::Play::PLAYING : holofan::Play::IDLE;
   st_.progress = p.progress;
   st_.total = p.total;
@@ -293,10 +312,12 @@ bool FanController::refreshPlay() {
 void FanController::refreshCatalog() {
   char line[MCU_LINE_MAX], reply[REPLY_BUF] = {0};
   if (buildLine("s", nullptr, 0, line, sizeof(line)) < 0) return;
-  if (link_.transact(line, nullptr, LIST_TIMEOUT_MS, reply, sizeof(reply)) <= 0) {
+  int n = link_.transact(line, nullptr, LIST_TIMEOUT_MS, reply, sizeof(reply));
+  if (n <= 0) {
     setErr("timeout");                 // keep the old catalog
     return;
   }
+  settleIfCut(link_, n, sizeof(reply));   // a listing longer than the buffer is still being printed
   parseList(reply, cat_);
   updateIndex();
   setErr("none");
@@ -330,7 +351,10 @@ int FanController::formatBoot(char* out, size_t size) const {
     n = snprintf(out, size, "[fan] MCU at connect: settings not read");
   }
   if (n < 0 || (size_t)n >= size) return -1;
-  if (bootPlayKnown_) n += snprintf(out + n, size - (size_t)n, "; playing %s %d/%d", bootClip_, bootProgress_, bootTotal_);
+  char clip[sizeof(bootClip_)];
+  if (bootPlayKnown_)
+    n += snprintf(out + n, size - (size_t)n, "; playing %s %d/%d", meshSafeCopy(bootClip_, clip, sizeof(clip)),
+                  bootProgress_, bootTotal_);
   else n += snprintf(out + n, size - (size_t)n, "; clip ?");
   return (n < 0 || (size_t)n >= size) ? -1 : n;
 }

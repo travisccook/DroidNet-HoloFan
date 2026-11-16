@@ -23,7 +23,9 @@ void fanMcuHoldForRestart();
 void fanMcuDiag(char* out, size_t size);
 // Bench/debug: send one console-typed line ("<cmd> [args]") to the MCU and
 // print its raw reply. Goes through buildLine(), so `v` and unsafe
-// arguments are refused. False if the queue is full.
+// arguments are refused. A line that does not fit the queue
+// (fanlogic::rawLineFits) is refused with a console line of its own, never
+// cut short (returns true: nothing more to report). False if the queue is full.
 bool fanMcuRaw(const char* line);
 
 // Bench (#HLFY): ask the MCU task to set volume v (1-3) and

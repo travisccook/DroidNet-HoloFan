@@ -36,6 +36,8 @@ int buildLine(const char* cmd, const char* const* args, int argc, char* out, siz
   return (int)n;
 }
 
+bool rawLineFits(const char* line) { return line && strlen(line) < MCU_LINE_MAX; }
+
 bool rawMeshAllowed(const char* cmd) {
   static const char* const OK[] = {"get_setting", "get_playinfo", "s", "t", "md5", "a", "b", "c", "d",
                                    "e", "f", "g", "h", "i", "j", "k", "m", "o"};
@@ -46,7 +48,7 @@ bool rawMeshAllowed(const char* cmd) {
 }
 
 bool rawMeshLineAllowed(const char* line) {
-  if (!line) return false;
+  if (!line || !rawLineFits(line)) return false;   // never checked whole and then sent cut short
   while (*line == ' ') line++;
   char cmd[16];
   size_t n = 0;

@@ -172,6 +172,22 @@ void test_feed_abort() {
 
 // Review focus 1: once the session has ended the feed takes no more bytes
 // (on the fan its assembly buffer is freed then).
+// An erase ahead of the writer failed (UploadIdf: FrameRing::eraseAhead < 0):
+// the body fails as a failed push does, and a later abort does not rename it.
+void test_feed_flash_failed_outside_a_write() {
+  Rig r;
+  auto d = pattern(5000);
+  r.feed.begin(d.size(), r.asmBuf);
+  TEST_ASSERT_EQUAL(2000, r.feed.write(0, d.data(), 2000));
+  r.feed.flashFailed();
+  TEST_ASSERT_EQUAL(BodyState::FAILED, r.feed.state());
+  TEST_ASSERT_EQUAL(ClipErr::FLASH, r.feed.failErr());
+  TEST_ASSERT_EQUAL('f', r.feed.bodyEnd());
+  TEST_ASSERT_EQUAL(0, r.feed.write(2000, d.data() + 2000, 1000));
+  r.feed.abort();
+  TEST_ASSERT_EQUAL(ClipErr::FLASH, r.feed.failErr());
+}
+
 void test_feed_write_after_abort_is_refused() {
   Rig r;
   auto d = pattern(5000);
@@ -357,6 +373,7 @@ int main(int, char**) {
   RUN_TEST(test_feed_write_stops_when_ring_full_and_resumes_after_pop);
   RUN_TEST(test_feed_abort);
   RUN_TEST(test_feed_write_after_abort_is_refused);
+  RUN_TEST(test_feed_flash_failed_outside_a_write);
   RUN_TEST(test_feed_flash_failure);
   RUN_TEST(test_feed_prefill_idle_fails_after_ten_minutes);
   RUN_TEST(test_feed_dry_after_the_first_pop);

@@ -12,6 +12,11 @@
 
 namespace fanlogic {
 
+// An "s" reply may continue after a gap: keep reading until quiet this long
+// (at most LIST_MAX_MS in all).
+constexpr uint32_t LIST_QUIET_MS = 1000;
+constexpr uint32_t LIST_MAX_MS = 3000;
+
 // The UART1 link, implemented by firmware/holofan/components/mcu_link and by
 // a fake in the tests. Lines passed in are already framed by buildLine().
 class McuLink {
@@ -38,15 +43,31 @@ class McuLink {
   virtual int collect(char* buf, size_t size, uint32_t quietMs, uint32_t maxMs) = 0;
   // transact(line, nullptr, timeoutMs, ...) that hands the reply to `feed`
   // in pieces as it arrives, so a reply of any length needs no buffer (the
-  // full "s" listing for #HLFT). The default collects into 1 KB first.
+  // full "s" listing for #HLFT). It returns with the MCU quiet (or after
+  // its own bounded wait for that), so the caller may send the next line.
+  // The default collects into 1 KB first and drops the rest of a longer
+  // reply (settleIfCut).
   virtual int transactChunks(const char* line, uint32_t timeoutMs, void (*feed)(void* ctx, const char* b, size_t n),
                              void* ctx) {
     char buf[1024];
     int n = transact(line, nullptr, timeoutMs, buf, sizeof(buf));
     if (n > 0) feed(ctx, buf, (size_t)n);
+    if (n > 0 && (size_t)n + 1 >= sizeof(buf)) collect(nullptr, 0, LIST_QUIET_MS, LIST_MAX_MS);
     return n;
   }
 };
+
+// transact() returns as soon as its reply buffer is full, while the MCU may
+// still be printing (an "s" listing longer than the buffer), and the MCU
+// drops or misreads a line sent while it is busy. After a transact() that
+// returned `n` bytes into a buffer of `size`: if it filled the buffer, read
+// and drop the rest until the line has been quiet for LIST_QUIET_MS (at most
+// LIST_MAX_MS). True if it did.
+inline bool settleIfCut(McuLink& link, int n, size_t size) {
+  if (n <= 0 || (size_t)n + 1 < size) return false;
+  link.collect(nullptr, 0, LIST_QUIET_MS, LIST_MAX_MS);
+  return true;
+}
 
 constexpr int      SETTING_TRIES = 21;          // stock: give up after 21 get_setting attempts
 constexpr uint32_t SETTING_TIMEOUT_MS = 400;

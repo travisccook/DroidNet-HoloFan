@@ -40,6 +40,9 @@ class ChunkFeed {
   size_t write(size_t pos, const uint8_t* data, size_t n);
   // DELETE /api/upload, or the session ended: the body fails ('a').
   void abort();
+  // The staging flash failed outside write() (an erase ahead of the
+  // writer): the body fails ('f', FLASH), as when a push fails.
+  void flashFailed();
   // Consumer (the FrameSource calls).
   size_t count() const { return ring_.count(); }
   bool full() const { return ring_.full(); }

@@ -143,13 +143,27 @@ class FakeLink : public McuLink {
     expects.pop_front();
     return v;
   }
-  int collect(char* buf, size_t size, uint32_t, uint32_t) override {
+  // Bytes waiting in the UART when collect() runs (asked for on every call):
+  // collect() reads them all, into buf or away, and expect() never sees them.
+  std::function<std::string()> pending;
+  std::vector<uint32_t> collectQuiet;          // quietMs of the collect at each lines[] index (0 elsewhere)
+  int collect(char* buf, size_t size, uint32_t quietMs, uint32_t) override {
     lines.push_back("<collect>");
+    collectQuiet.resize(lines.size(), 0);
+    collectQuiet.back() = quietMs;
     int n = 0;
     if (buf && lastWasList && !lateTail.empty()) {
       size_t len = strlen(buf);
       snprintf(buf + len, size - len, "%s", lateTail.c_str());
       n = (int)(strlen(buf) - len);
+    }
+    if (pending) {
+      std::string got = pending();
+      if (buf && size) {
+        size_t len = strlen(buf);
+        snprintf(buf + len, size - len, "%s", got.c_str());
+      }
+      n += (int)got.size();
     }
     lastWasList = false;
     return n;
@@ -631,6 +645,126 @@ void test_upload_settles_after_pause_and_create() {
   TEST_ASSERT_TRUE(h >= 0 && w > h && f > w);
   TEST_ASSERT_EQUAL_STRING("<collect>", l.lines[h + 1].c_str());
   TEST_ASSERT_EQUAL_STRING("<collect>", l.lines[w + 1].c_str());
+}
+
+// Review 2026-11: the MCU's verdict can arrive with the last frame's output,
+// before expect() is called; the collect after that frame used to drop it,
+// the upload ended NOVERDICT and cleanup deleted a good clip.
+void test_upload_verdict_before_the_wait_is_seen() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {""};
+  l.expects = {0};                            // CT only: an expect() for the verdict would time out
+  bool given = false;
+  l.pending = [&]() -> std::string {
+    if (s.frames < 20 || given) return "";
+    given = true;
+    return "mculog:get packet #1\r\nRT\n";
+  };
+  b.data = pattern(100);
+  UploadResult r = up(l, s, b, "99-Test.bin", 100);
+  TEST_ASSERT_EQUAL(ClipErr::OK, r.err);
+  TEST_ASSERT_FALSE(r.partial);
+  TEST_ASSERT_EQUAL(0, l.count("u 99-Test.bin\n"));
+  for (const auto& t : l.expectFirstToken) TEST_ASSERT_FALSE(t == "RT\n");   // no wait: it was there
+}
+
+// The same after the last window's GPIO18 wait (the second collect).
+void test_upload_verdict_after_the_window_wait_is_seen() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {""};
+  l.expects = {0};
+  bool given = false;
+  l.pending = [&]() -> std::string {
+    if (s.windows < 1 || given) return "";
+    given = true;
+    return "RT\n";
+  };
+  b.data = pattern(100);
+  TEST_ASSERT_EQUAL(ClipErr::OK, up(l, s, b, "99-Test.bin", 100).err);
+  TEST_ASSERT_EQUAL(0, l.count("u 99-Test.bin\n"));
+}
+
+void test_upload_early_rf_is_rf_not_noverdict() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {"", "02-Name.bin\n"};
+  l.expects = {0};
+  bool given = false;
+  l.pending = [&]() -> std::string {
+    if (s.frames < 20 || given) return "";
+    given = true;
+    return "RF\n";
+  };
+  b.data = pattern(100);
+  UploadResult r = up(l, s, b, "99-Test.bin", 100);
+  TEST_ASSERT_EQUAL(ClipErr::RF, r.err);
+  TEST_ASSERT_EQUAL(1, l.count("u 99-Test.bin\n"));
+}
+
+// A verdict cut in two by the reads ("R", then "T\n"): read on, do not drop the half.
+void test_upload_verdict_split_across_reads_is_seen() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {""};
+  l.expects = {0};
+  int step = 0;
+  l.pending = [&]() -> std::string {
+    if (s.windows < 1 || step >= 2) return "";
+    return step++ == 0 ? "mculog:done\nR" : "T\n";
+  };
+  b.data = pattern(100);
+  TEST_ASSERT_EQUAL(ClipErr::OK, up(l, s, b, "99-Test.bin", 100).err);
+  TEST_ASSERT_EQUAL(0, l.count("u 99-Test.bin\n"));
+}
+
+// Output of earlier windows is not a verdict for the upload: only what
+// follows the last frame is kept, and with nothing there the wait is as before.
+void test_upload_verdict_still_waited_for_when_not_early() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {"", ""};
+  l.expects = {0, 1};                         // CT, RF from the wait
+  bool given = false;
+  l.pending = [&]() -> std::string {
+    if (s.frames < 20 || given) return "";    // after the first window of three
+    given = true;
+    return "RT\n";
+  };
+  b.data = pattern(79212);
+  UploadResult r = up(l, s, b, "99-Test.bin", b.data.size());
+  TEST_ASSERT_EQUAL(60, s.frames);
+  TEST_ASSERT_EQUAL(ClipErr::RF, r.err);
+}
+
+// Review 2026-11: cleanup's "u" went out with no settle before it, the only
+// MCU line in ClipOps that did (the MCU drops a line sent while it is busy).
+void test_upload_cleanup_settles_before_the_delete() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {"", "02-Name.bin\n"};
+  l.expects = {0};
+  s.failFrameAt = 5;                          // SPI error mid-window: the MCU is busy with the transfer
+  b.data = pattern(100);
+  UploadResult r = up(l, s, b, "99-Test.bin", 100);
+  TEST_ASSERT_EQUAL(ClipErr::SPI, r.err);
+  int u = indexOf(l, "u 99-Test.bin\n");
+  TEST_ASSERT_TRUE(u > 0);
+  TEST_ASSERT_EQUAL_STRING("<collect>", l.lines[u - 1].c_str());
+  TEST_ASSERT_EQUAL_UINT32(SETTLE_QUIET_MS, l.collectQuiet[u - 1]);
+}
+
+// A listing longer than the buffer is cut there; the read until quiet that
+// follows drains the rest (review 2026-11: the fan's buffer is 4 KB).
+void test_list_longer_than_the_buffer_is_drained_until_quiet() {
+  FakeLink l;
+  std::string big;
+  for (int i = 0; i < 40; i++) { char n[24]; snprintf(n, sizeof(n), "%02d-LongName.bin\r\n", i); big += n; }
+  l.lists = {big};
+  char small[128] = "";
+  int n = listClips(l, small, sizeof(small));
+  TEST_ASSERT_TRUE(n >= (int)sizeof(small) - 1);
+  TEST_ASSERT_EQUAL(sizeof(small) - 1, strlen(small));
+  TEST_ASSERT_EQUAL(2, (int)l.lines.size());
+  TEST_ASSERT_EQUAL_STRING("s\n", l.lines[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("<collect>", l.lines[1].c_str());
+  TEST_ASSERT_EQUAL_UINT32(LIST_QUIET_MS, l.collectQuiet[1]);
+  TEST_ASSERT_TRUE(listHas(small, "00-LongName.bin"));
 }
 
 // The "s" reply can arrive with a gap; a name in the late part still counts.
@@ -1424,6 +1558,13 @@ int main(int, char**) {
   RUN_TEST(test_upload_reports_frames_sent);
   RUN_TEST(test_upload_settles_after_pause_and_create);
   RUN_TEST(test_list_reads_a_late_tail);
+  RUN_TEST(test_upload_verdict_before_the_wait_is_seen);
+  RUN_TEST(test_upload_verdict_after_the_window_wait_is_seen);
+  RUN_TEST(test_upload_early_rf_is_rf_not_noverdict);
+  RUN_TEST(test_upload_verdict_split_across_reads_is_seen);
+  RUN_TEST(test_upload_verdict_still_waited_for_when_not_early);
+  RUN_TEST(test_upload_cleanup_settles_before_the_delete);
+  RUN_TEST(test_list_longer_than_the_buffer_is_drained_until_quiet);
   RUN_TEST(test_upload_name_accepts_underscore);
   RUN_TEST(test_delete_force_skips_list_check);
   RUN_TEST(test_format_needs_exact_token);

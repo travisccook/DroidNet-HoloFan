@@ -235,6 +235,7 @@ int McuUart::transactChunks(const char* line, uint32_t timeoutMs, void (*feed)(v
   int64_t deadline = nowUs() + (int64_t)timeoutMs * 1000;
   int64_t lastByte = 0;
   uint8_t tmp[128];
+  bool quiet = false;
   while (nowUs() < deadline) {
     int r = uart_read_bytes(MCU_UART, tmp, sizeof(tmp), pdMS_TO_TICKS(10));
     if (r > 0) {
@@ -243,7 +244,22 @@ int McuUart::transactChunks(const char* line, uint32_t timeoutMs, void (*feed)(v
       total += r;
       lastByte = nowUs();
     } else if (total > 0 && nowUs() - lastByte >= (int64_t)QUIET_MS * 1000) {
+      quiet = true;
       break;
+    }
+  }
+  // The timeout came while the MCU was still printing: the caller sends its
+  // next line right away, and a busy MCU drops it. Read (and feed) the rest
+  // until it has been quiet for QUIET_MS, at most LIST_MAX_MS more.
+  if (!quiet && total > 0) {
+    const int64_t cap = nowUs() + (int64_t)fanlogic::LIST_MAX_MS * 1000;
+    while (nowUs() < cap && nowUs() - lastByte < (int64_t)QUIET_MS * 1000) {
+      int r = uart_read_bytes(MCU_UART, tmp, sizeof(tmp), pdMS_TO_TICKS(10));
+      if (r <= 0) continue;
+      note(tmp, r);
+      feed(ctx, (const char*)tmp, (size_t)r);
+      total += r;
+      lastByte = nowUs();
     }
   }
   return total;

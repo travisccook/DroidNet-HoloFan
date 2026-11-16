@@ -125,6 +125,11 @@ static bool deleteLine(const char* name, char* line, size_t size) {
   return buildLine("u", args, 1, line, size) > 0;
 }
 
+// transact() returns as soon as scratch is full, with the MCU still printing
+// a longer listing. The collect() below is then the drain: it reads on
+// (keeping only what still fits) until the line has been quiet for
+// LIST_QUIET_MS, so the caller's next line never reaches an MCU that is busy
+// printing. Every caller gets it, a full buffer or not.
 int listClips(McuLink& link, char* scratch, size_t scratchSize) {
   int n = link.transact("s\n", nullptr, LIST_TIMEOUT_MS, scratch, scratchSize);
   if (n < 0) n = 0;
@@ -164,6 +169,9 @@ ClipErr deleteClip(McuLink& link, const char* name, char* scratch, size_t scratc
 static bool cleanup(McuLink& link, const char* name, char* scratch, size_t scratchSize) {
   char line[MCU_LINE_MAX];
   if (!deleteLine(name, line, sizeof(line))) return true;
+  // The upload may have stopped mid-transfer (sync, SPI, body) with the MCU
+  // still busy: let it go quiet first, or it drops the delete.
+  link.collect(nullptr, 0, SETTLE_QUIET_MS, SETTLE_MAX_MS);
   link.expect(line, nullptr, 0, DELETE_READ_MS);   // settle: the MCU never ACKs `u`
   int n = listClips(link, scratch, scratchSize);
   return n <= 0 || listHas(scratch, name);
@@ -212,6 +220,24 @@ UploadResult withBody(UploadResult r, FrameSource& src) {
   r.bodyBytes = src.bodyBytes();
   r.bodyEnd = src.bodyEnd();
   return r;
+}
+
+const char* const VERDICT[2] = {"RT\n", "RF\n"};
+
+// The MCU's verdict in bytes already read: the index into VERDICT of the
+// one that came first, or -1.
+int verdictIn(const char* s) {
+  const char* rt = strstr(s, VERDICT[0]);
+  const char* rf = strstr(s, VERDICT[1]);
+  if (rt && rf) return rt < rf ? 0 : 1;
+  return rt ? 0 : rf ? 1 : -1;
+}
+
+// `s` ends inside a verdict ("R", "RT" or "RF"): the rest is still on its way.
+bool verdictCut(const char* s) {
+  size_t n = strlen(s);
+  if (n >= 1 && s[n - 1] == 'R') return true;
+  return n >= 2 && s[n - 2] == 'R' && (s[n - 1] == 'T' || s[n - 1] == 'F');
 }
 
 }  // namespace
@@ -265,6 +291,8 @@ UploadResult uploadClip(McuLink& link, ClipSpi& spi, FrameSource& src, Clock& cl
   bool inWindow = false;                                  // between windowBegin() and windowEnd()
   const bool burst = pace.pace == Pace::BURST;
   const bool reserve = pace.pace == Pace::RESERVE;
+  // The listing in scratch has been used; cleanup() lists into it again.
+  const bool keepTail = scratchSize >= VERDICT_TAIL_MIN;
   while (sent < frames && err == ClipErr::OK) {
     BodyState st = src.state();
     if (st == BodyState::FAILED && src.failErr() == ClipErr::FLASH) { err = ClipErr::FLASH; break; }
@@ -317,11 +345,16 @@ UploadResult uploadClip(McuLink& link, ClipSpi& spi, FrameSource& src, Clock& cl
       winStart = lastSend;
       if (sent > 1 && (uint32_t)(lastSend - prevSend) > igmax) igmax = lastSend - prevSend;
     }
-    link.collect(nullptr, 0, 1, 1);     // pick up MCU output after every frame (its abort timing)
+    // Pick up MCU output after every frame (its abort timing). After the
+    // last frame it is kept: the verdict may be in it already, and expect()
+    // below only sees what arrives later.
+    if (sent == frames && keepTail) scratch[0] = '\0';
+    char* const tail = sent == frames && keepTail ? scratch : nullptr;
+    link.collect(tail, tail ? scratchSize : 0, 1, 1);
     if (sent % SPI_WINDOW_FRAMES == 0) {
       if ((uint32_t)(lastSend - winStart) > wmax) wmax = lastSend - winStart;
       if (!spi.waitWindow()) err = ClipErr::SYNC;
-      link.collect(nullptr, 0, 1, 1);   // and after the window's GPIO18 wait
+      link.collect(tail, tail ? scratchSize : 0, 1, 1);   // and after the window's GPIO18 wait
       src.windowEnd();
       inWindow = false;
     }
@@ -335,8 +368,15 @@ UploadResult uploadClip(McuLink& link, ClipSpi& spi, FrameSource& src, Clock& cl
     return r;
   };
   if (err == ClipErr::OK) {
-    static const char* const VERDICT[2] = {"RT\n", "RF\n"};
-    int v = link.expect(nullptr, VERDICT, 2, VERDICT_TIMEOUT_MS);
+    int v = -1;
+    if (keepTail) {
+      // A verdict cut off at the end of what was read: its last bytes are
+      // only moments away (bounded, in case the MCU keeps printing "R"s).
+      for (int i = 0; i < VERDICT_CUT_READS && verdictIn(scratch) < 0 && verdictCut(scratch); i++)
+        link.collect(scratch, scratchSize, VERDICT_CUT_QUIET_MS, VERDICT_CUT_MAX_MS);
+      v = verdictIn(scratch);
+    }
+    if (v < 0) v = link.expect(nullptr, VERDICT, 2, VERDICT_TIMEOUT_MS);
     if (src.state() == BodyState::FAILED) err = src.failErr();
     else if (v == 1) err = ClipErr::RF;
     else if (v < 0) err = ClipErr::NOVERDICT;

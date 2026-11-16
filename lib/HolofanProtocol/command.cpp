@@ -1,6 +1,5 @@
 #include "command.h"
 #include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
 
 namespace holofan {
@@ -11,19 +10,30 @@ bool parseCommand(const char* line, Cmd& out) {
   if (*p == '\0') return false;
   char a = *p;
   const char* rest = p + 1;
+  // Every command runs to the end of the line: nothing may follow it, and a
+  // number is digits only (no sign, space or other text).
+  const bool bare = rest[0] == '\0';                   // no argument
+  const bool one = rest[0] != '\0' && rest[1] == '\0';  // exactly one character
   switch (a) {
-    case '1': out = {CmdType::POWER_ON, 0}; return true;
-    case '0': out = {CmdType::POWER_OFF, 0}; return true;
-    case 'P': out = {CmdType::PAUSE, 0}; return true;
-    case 'N': out = {CmdType::NEXT, 0}; return true;
-    case 'R': out = {CmdType::PREV, 0}; return true;
-    case 'M': out = {CmdType::MUTE, 0}; return true;
-    case 'U': out = {CmdType::UNMUTE, 0}; return true;
-    case 'C': out = {CmdType::CATALOG_REFRESH, 0}; return true;
-    case 'D': out = {CmdType::CATALOG_DUMP, 0}; return true;
-    case 'S': out = {CmdType::STATUS, 0}; return true;
-    case 'Q': out = {CmdType::DIAG, 0}; return true;
-    case 'G': { int n = atoi(rest); if (n < 1) return false; out = {CmdType::PLAY_INDEX, n}; return true; }
+    case '1': if (!bare) return false; out = {CmdType::POWER_ON, 0}; return true;
+    case '0': if (!bare) return false; out = {CmdType::POWER_OFF, 0}; return true;
+    case 'P': if (!bare) return false; out = {CmdType::PAUSE, 0}; return true;
+    case 'N': if (!bare) return false; out = {CmdType::NEXT, 0}; return true;
+    case 'R': if (!bare) return false; out = {CmdType::PREV, 0}; return true;
+    case 'M': if (!bare) return false; out = {CmdType::MUTE, 0}; return true;
+    case 'U': if (!bare) return false; out = {CmdType::UNMUTE, 0}; return true;
+    case 'C': if (!bare) return false; out = {CmdType::CATALOG_REFRESH, 0}; return true;
+    case 'D': if (!bare) return false; out = {CmdType::CATALOG_DUMP, 0}; return true;
+    case 'S': if (!bare) return false; out = {CmdType::STATUS, 0}; return true;
+    case 'Q': if (!bare) return false; out = {CmdType::DIAG, 0}; return true;
+    case 'G': {                                       // #HLFG<n>: one to three digits, n >= 1, nothing after
+      int n = 0, digits = 0;
+      const char* q = rest;
+      for (; *q >= '0' && *q <= '9' && digits < 3; q++, digits++) n = n * 10 + (*q - '0');
+      if (digits == 0 || *q != '\0' || n < 1) return false;
+      out = {CmdType::PLAY_INDEX, n};
+      return true;
+    }
     case 'T': {                                       // #HLFT<NN>: one or two digits, nothing after
       if (rest[0] < '0' || rest[0] > '9') return false;
       int n = rest[0] - '0';
@@ -63,7 +73,7 @@ bool parseCommand(const char* line, Cmd& out) {
       if ((rest[0] != '0' && rest[0] != '1') || rest[1] != '\0') return false;
       out = {CmdType::BLUETOOTH, rest[0] - '0'};
       return true;
-    case 'K': {                                       // #HLFK<ss>: two digits, 00 or 02-50
+    case 'K': {                                       // #HLFK<ss>: two digits, 00 or 02-25
       if (rest[0] < '0' || rest[0] > '9' || rest[1] < '0' || rest[1] > '9' || rest[2] != '\0') return false;
       int n = (rest[0] - '0') * 10 + (rest[1] - '0');
       if (n == 1 || n > 25) return false;
@@ -77,16 +87,22 @@ bool parseCommand(const char* line, Cmd& out) {
       out = {CmdType::TX_POWER, n};
       return true;
     }
-    case 'B': { int n = atoi(rest); if (n < 1 || n > 3) return false; out = {CmdType::BRIGHTNESS, n}; return true; }
-    case 'V': { int n = atoi(rest); if (n < 1 || n > 3) return false; out = {CmdType::VOLUME, n}; return true; }
-    case 'L':
-      if (*rest == 'A') { out = {CmdType::LOOP, 1}; return true; }
-      if (*rest == 'O') { out = {CmdType::LOOP, 0}; return true; }
-      return false;
-    case 'W':
-      if (*rest == '1') { out = {CmdType::SWITCHER, 1}; return true; }
-      if (*rest == '0') { out = {CmdType::SWITCHER, 0}; return true; }
-      return false;
+    case 'B':                                         // #HLFB<1-3>: one digit
+      if (!one || rest[0] < '1' || rest[0] > '3') return false;
+      out = {CmdType::BRIGHTNESS, rest[0] - '0'};
+      return true;
+    case 'V':                                         // #HLFV<1-3>: one digit
+      if (!one || rest[0] < '1' || rest[0] > '3') return false;
+      out = {CmdType::VOLUME, rest[0] - '0'};
+      return true;
+    case 'L':                                         // #HLFL<O|A>
+      if (!one || (rest[0] != 'A' && rest[0] != 'O')) return false;
+      out = {CmdType::LOOP, rest[0] == 'A' ? 1 : 0};
+      return true;
+    case 'W':                                         // #HLFW<1|0>
+      if (!one || (rest[0] != '1' && rest[0] != '0')) return false;
+      out = {CmdType::SWITCHER, rest[0] - '0'};
+      return true;
     default:
       return false;
   }
