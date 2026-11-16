@@ -8,8 +8,9 @@ bool SeqWindow::isDup(uint16_t seq) {
   int16_t d = (int16_t)(uint16_t)(seq - high_);
   if (d == 0) return true;
   if (d > 0) {                                   // newer: slide the window up
-    if (d >= 32) mask_ = 0;
-    else         mask_ = (mask_ << d) | (1u << (d - 1));
+    if (d > 32)       mask_ = 0;
+    else if (d == 32) mask_ = 1u << 31;          // only the old high is still in the window
+    else              mask_ = (mask_ << d) | (1u << (d - 1));
     high_ = seq;
     return false;
   }

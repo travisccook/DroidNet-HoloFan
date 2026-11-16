@@ -61,14 +61,48 @@ void test_boot_shorter_than_two_seconds_does_not_count() {
 }
 
 // Software resets (OTA reboot, mesh restart, crash) and brown-outs are not
-// power cycles: they neither count nor clear.
-void test_non_power_on_reset_ignored() {
+// power cycles: they never count, and a short one leaves the count alone.
+void test_non_power_on_reset_does_not_count() {
   Boot b(false, 2);
-  b.at(2000); b.at(10000); b.at(60000);
+  b.at(2000); b.at(9999);
   TEST_ASSERT_FALSE(b.counted);
   TEST_ASSERT_FALSE(b.enter);
   TEST_ASSERT_FALSE(b.cleared);
   TEST_ASSERT_EQUAL(2, b.stored);
+}
+
+// Review finding: two short power cycles, then a brown-out boot that runs
+// for days, left the count at 2, and the next single power-on entered
+// maintenance. A boot that stays up 10 s clears it, whatever its reset reason.
+void test_long_non_power_on_boot_clears_stored_count() {
+  Boot b(false, 2);
+  b.at(2000); b.at(10000);
+  TEST_ASSERT_TRUE(b.cleared);
+  TEST_ASSERT_FALSE(b.enter);
+  TEST_ASSERT_EQUAL(0, b.stored);
+  Boot next(true, b.stored);                 // one ordinary power-on afterwards
+  next.at(2000);
+  TEST_ASSERT_FALSE(next.enter);
+  TEST_ASSERT_EQUAL(1, next.stored);
+}
+
+// Nothing stored: a non-power-on boot asks for no write at all.
+void test_non_power_on_boot_with_no_count_writes_nothing() {
+  Boot b(false, 0);
+  b.at(2000); b.at(10000); b.at(60000);
+  TEST_ASSERT_FALSE(b.cleared);
+}
+
+// The adapter may be unable to store a CLEAR (NVS writes held off): it is
+// offered again.
+void test_retry_clear_offers_the_clear_again() {
+  Boot b(true, 1);
+  b.at(2000);
+  b.t.retryClear();                          // no effect before the clear is due
+  TEST_ASSERT_EQUAL(PowerCycleTrigger::Action::CLEAR, b.t.poll(10000, b.stored));
+  TEST_ASSERT_EQUAL(PowerCycleTrigger::Action::NONE, b.t.poll(11000, b.stored));
+  b.t.retryClear();
+  TEST_ASSERT_EQUAL(PowerCycleTrigger::Action::CLEAR, b.t.poll(12000, b.stored));
 }
 
 // Acts once per boot.
@@ -93,7 +127,10 @@ int main(int, char**) {
   RUN_TEST(test_three_short_power_cycles_enter_maintenance);
   RUN_TEST(test_long_boot_clears_count);
   RUN_TEST(test_boot_shorter_than_two_seconds_does_not_count);
-  RUN_TEST(test_non_power_on_reset_ignored);
+  RUN_TEST(test_non_power_on_reset_does_not_count);
+  RUN_TEST(test_long_non_power_on_boot_clears_stored_count);
+  RUN_TEST(test_non_power_on_boot_with_no_count_writes_nothing);
+  RUN_TEST(test_retry_clear_offers_the_clear_again);
   RUN_TEST(test_acts_once);
   RUN_TEST(test_garbage_count_restarts);
   return UNITY_END();

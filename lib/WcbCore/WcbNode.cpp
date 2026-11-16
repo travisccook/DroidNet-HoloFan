@@ -24,7 +24,10 @@ bool WcbNode::setPeekHook(PeekFn fn, void* ctx) {
   return true;
 }
 
-void WcbNode::suspend() { started_.store(false, std::memory_order_release); }
+void WcbNode::suspend() {
+  started_.store(false, std::memory_order_release);
+  cmdHead_ = cmdCount_ = 0;              // never run a command queued before the node left the mesh
+}
 
 void WcbNode::rejoin() {
   if (!begun_) return;
@@ -32,6 +35,7 @@ void WcbNode::rejoin() {
   peers_.reset();
   sendq_.clear();
   cmdHead_ = cmdCount_ = 0;
+  for (SeqWindow& w : peekWin_) w.reset();   // started_ is false: ingest() is not reading them
   registerPeers();
   sched_.arm(plat_->nowMs(), cfg_.id, cfg_.identity.devType[0] != '\0');
   started_.store(true, std::memory_order_release);
@@ -76,9 +80,16 @@ void WcbNode::ingest(const uint8_t mac[6], const uint8_t* data, size_t len) {
     memcpy(&p, data, sizeof(p));
     uint8_t sender = 0;
     char cmd[COMMAND_FIELD + 1];
-    if (p.packetType == PKT_COMMAND && p.commandIncluded && gate(mac, p, sender) == Gate::OK &&
-        extractCommand(p, cmd))
-      fn(peekCtx_, sender, cmd);
+    if (p.packetType == PKT_BOOT) {
+      // The sender rebooted and restarts its seq at 1: forget its last peek.
+      if (gate(mac, p, sender) == Gate::OK) peekWin_[sender].reset();
+    } else if (p.packetType == PKT_COMMAND && p.commandIncluded && gate(mac, p, sender) == Gate::OK &&
+               extractCommand(p, cmd)) {
+      // A retry (same seq) of a command already peeked is not a new command;
+      // poll() drops it as a duplicate, so the hook must not act on it either.
+      bool retry = p.seq != 0 && peekWin_[sender].isDup(p.seq);
+      if (!retry) fn(peekCtx_, sender, cmd);
+    }
   }
   if (!ring_.push(mac, data, len))
     ringFull_.store(ringFull_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);

@@ -5,7 +5,8 @@
 //
 // Only power-on resets count. Brown-outs (which reset within milliseconds of
 // power-up) are excluded twice: by the reset reason and by the 2 s minimum.
-// A boot that stays up 10 s clears the count. Acts at most once per boot.
+// A boot that stays up 10 s clears the count, whatever its reset reason (a
+// stored count must not wait for the next power-on). Acts at most once per boot.
 #ifndef POWER_CYCLE_TRIGGER_H
 #define POWER_CYCLE_TRIGGER_H
 #include <stdint.h>
@@ -23,10 +24,14 @@ class PowerCycleTrigger {
   void begin(bool powerOnReset);
   // `stored` is the count kept across boots. COUNT: store newCount().
   // ENTER_MAINT and CLEAR: store 0 (ENTER_MAINT: also enter maintenance).
+  // A CLEAR that could not be stored may be asked for again with retryClear().
   Action poll(uint32_t uptimeMs, uint8_t stored);
   uint8_t newCount() const { return newCount_; }
+  // The adapter could not store the CLEAR yet: poll() returns it again.
+  void retryClear() { cleared_ = false; if (powerOn_) active_ = true; }
 
  private:
+  bool    powerOn_ = false;
   bool    active_ = false;
   bool    counted_ = false;
   bool    cleared_ = false;

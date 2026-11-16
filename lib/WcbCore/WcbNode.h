@@ -50,7 +50,8 @@ struct WcbCounters {
 
 // Called from ingest() (radio task, small stack) for a COMMAND that passes
 // the gate and the CRC check, before it is queued. Must be short, must not
-// block, and should keep its own stack use small.
+// block, and should keep its own stack use small. Called once per command:
+// the sender's ETM retries (same seq) do not call it again.
 typedef void (*PeekFn)(void* ctx, uint8_t sender, const char* cmd);
 
 class WcbNode {
@@ -81,7 +82,8 @@ class WcbNode {
   // Send one console line as RTERM packet(s) of up to 160 chars.
   bool sendTerm(uint8_t target, const char* line);
   bool isOnline(uint8_t id) const { return peers_.isOnline(id); }
-  // Stop all mesh activity (the adapter is about to leave the channel).
+  // Stop all mesh activity (the adapter is about to leave the channel) and
+  // drop the commands still queued for popCommand().
   void suspend();
   // Back on the mesh after suspend(): the adapter has re-initialised
   // ESP-NOW. Re-registers peers, forgets every sender's dedupe window and
@@ -122,6 +124,10 @@ class WcbNode {
   bool         begun_ = false;
   PeekFn       peek_ = nullptr;
   void*        peekCtx_ = nullptr;
+  // Seqs already peeked, per sender (radio task only, while started): a
+  // sender's ETM retry of a command already peeked must not fire the hook
+  // again. Separate from peers_' windows, which belong to the poll() task.
+  SeqWindow    peekWin_[MAX_ID + 1];
   PacketRing<RING_N> ring_;
   std::atomic<uint32_t> ringFull_{0};   // written by ingest() only
   PeerTable    peers_;

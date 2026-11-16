@@ -36,6 +36,19 @@ void test_big_jump_clears_mask() {
   TEST_ASSERT_FALSE(w.isDup(20));                  // inside new window, not seen
 }
 
+// A jump of exactly 32 keeps the old high (now the oldest bit of the mask).
+void test_jump_of_exactly_32_remembers_old_high() {
+  SeqWindow w;
+  w.isDup(100);
+  TEST_ASSERT_FALSE(w.isDup(132));
+  TEST_ASSERT_TRUE(w.isDup(100));                  // still inside the window
+  TEST_ASSERT_FALSE(w.isDup(101));                 // never seen
+  SeqWindow v;
+  v.isDup(100);
+  TEST_ASSERT_FALSE(v.isDup(131));                 // jump of 31
+  TEST_ASSERT_TRUE(v.isDup(100));
+}
+
 void test_too_old_is_accepted() {
   SeqWindow w;
   w.isDup(100);
@@ -65,6 +78,7 @@ int main(int, char**) {
   RUN_TEST(test_newer_accepted);
   RUN_TEST(test_out_of_order_inside_window);
   RUN_TEST(test_big_jump_clears_mask);
+  RUN_TEST(test_jump_of_exactly_32_remembers_old_high);
   RUN_TEST(test_too_old_is_accepted);
   RUN_TEST(test_wraps_from_65535_to_1);
   RUN_TEST(test_reset_accepts_reused_sequence_numbers);

@@ -317,6 +317,46 @@ void test_peek_hook_sees_gated_command_in_ingest() {
   TEST_ASSERT_EQUAL(1, seen.n);
 }
 
+// Review finding: the sender's ETM retry of a #HLS already acted on (its ACK
+// was lost) fired the hook again and stopped a newer move.
+void test_peek_hook_ignores_retransmit() {
+  FakePlatform p2; WcbNode n2; Seen seen;
+  TEST_ASSERT_TRUE(n2.setPeekHook(recordPeek, &seen));
+  TEST_ASSERT_TRUE(n2.begin(config(), p2));
+  uint8_t m[6]; nodeMac(OCT2, OCT3, 2, m);
+  EtmPacket stop = frame(2, 15, PKT_COMMAND, 10, "#HLS");
+  n2.ingest(m, (const uint8_t*)&stop, sizeof(stop));
+  n2.ingest(m, (const uint8_t*)&stop, sizeof(stop));       // retry, same seq
+  TEST_ASSERT_EQUAL(1, seen.n);
+  EtmPacket next = frame(2, 15, PKT_COMMAND, 11, "#HLU");  // newer commands in between
+  n2.ingest(m, (const uint8_t*)&next, sizeof(next));
+  TEST_ASSERT_EQUAL(2, seen.n);
+  n2.ingest(m, (const uint8_t*)&stop, sizeof(stop));       // a late retry of the #HLS
+  TEST_ASSERT_EQUAL(2, seen.n);                            // must not stop the newer move
+  // Another sender with the same seq is a different command.
+  uint8_t m3[6]; nodeMac(OCT2, OCT3, 3, m3);
+  EtmPacket other = frame(3, 15, PKT_COMMAND, 10, "#HLS");
+  n2.ingest(m3, (const uint8_t*)&other, sizeof(other));
+  TEST_ASSERT_EQUAL(3, seen.n);
+  // The sender rebooted (BOOT) and reuses the seq: a new command.
+  n2.ingest(m3, (const uint8_t*)&other, sizeof(other));
+  TEST_ASSERT_EQUAL(3, seen.n);
+  EtmPacket boot = frame(3, 0, PKT_BOOT, 0);
+  n2.ingest(m3, (const uint8_t*)&boot, sizeof(boot));
+  n2.ingest(m3, (const uint8_t*)&other, sizeof(other));
+  TEST_ASSERT_EQUAL(4, seen.n);
+}
+
+// Review finding: a command queued before the node left the mesh was run
+// when the radio failed to come back (rejoin() never ran).
+void test_suspend_drops_queued_commands() {
+  deliver(frame(2, 15, PKT_COMMAND, 1, "#HLU"));
+  node->poll();
+  node->suspend();
+  uint8_t sender; char buf[201];
+  TEST_ASSERT_FALSE(popText(sender, buf));
+}
+
 // Review finding: ingest() reads the hook unsynchronised, so it may only be
 // set while the node has never started.
 void test_peek_hook_refused_after_begin() {
@@ -543,6 +583,8 @@ int main(int, char**) {
   RUN_TEST(test_full_queue_does_not_ack_so_retry_delivers);
   RUN_TEST(test_peek_hook_sees_gated_command_in_ingest);
   RUN_TEST(test_peek_hook_refused_after_begin);
+  RUN_TEST(test_peek_hook_ignores_retransmit);
+  RUN_TEST(test_suspend_drops_queued_commands);
   RUN_TEST(test_password_of_39_chars_matches);
   RUN_TEST(test_command_field_without_nul_is_bounded);
   RUN_TEST(test_pop_truncates_to_caller_buffer);
