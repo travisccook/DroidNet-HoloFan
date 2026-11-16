@@ -567,7 +567,8 @@ static bool meshBegin() {
 }
 
 // OTA validity: a new image in PENDING_VERIFY keeps itself only
-// if, within 30 s, the mesh is up (when configured) and the MCU answered.
+// if, within 30 s, it has reached the mesh (when configured). The MCU is
+// not required (see s_gate.begin()).
 static void gateLoop() {
   // "Reached the mesh" = a frame from another node of this mesh was received
   // on the right MAC (WCBs send a heartbeat every ~10 s). A radio that

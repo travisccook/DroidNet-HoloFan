@@ -9,7 +9,8 @@ top-level README.md is the place to start; this page is for developers.
 The fan runs from ota_0 / ota_1 under ESP-IDF's rollback bootloader. After
 the one wired first flash, updates arrive over Wi-Fi in maintenance mode
 (`;wHoloFan,#HLZX1` on a WCB, or three power cycles of 2-10 s each), and a
-new image must reach the mesh within 30 s or it rolls back by itself.
+new image must reach the mesh within 30 s or it rolls back by itself (since
+0.9.19: receive a frame from another node, so keep a WCB on and in range).
 
 ## Layout
 
@@ -67,6 +68,10 @@ flash_first.sh and flash.sh never erase or write the nvs partition
 restore_stock.sh writes the chip's own 2 MB backup back, NVS included: that
 is what restoring stock means. flash.sh (app only, into ota_0) is for
 recovery: after an OTA the fan may be booting ota_1, so prefer an OTA.
+A backup directory that holds a chip's stock-<mac>.bin without its .json,
+or the .json without the .bin, is refused by backup_stock.sh and by the
+three flashing commands; the message says what to move. (These refusals are tested against the fake esptool
+only.)
 
 ## Update over Wi-Fi
 
@@ -93,6 +98,42 @@ is off until `mesh pw` sets a password; `mesh oct` and `mesh ch` take the
 MAC octets and channel from your WCB mesh's configuration. Settings live in
 NVS namespace "hlmesh"; the firmware writes only that namespace and never
 erases NVS.
+
+## 0.9.19: not yet tried on a fan
+
+0.9.19 (code-review fixes) has passed the native and Python tests only. It
+has not been built with ESP-IDF or run on a fan. The EXPECT column is what
+the code is meant to do, not a result. Start with ./build.sh.
+
+    STEP  WHAT                                      EXPECT
+    ----  ----------------------------------------  ----------------------------------------
+    F1    OTA with a WCB on and in range            "[ota] new image marked valid" once a
+                                                    mesh frame has arrived (a WCB's
+                                                    heartbeat: about every 10 s). From the
+                                                    dome: check that one arrives in 30 s,
+                                                    or a good image rolls back
+    F2    OTA with every WCB off                    "[ota] ... rolling back" after 30 s;
+                                                    #HLI shows the old version
+    F3    maintenance and back, several times       on the mesh again each time; "[mesh]
+                                                    radio is down; restarting it" means
+                                                    the 5 s retry had to step in
+    F4    upload a clip (PUT, and a session)        ends ok, not "noverdict"; GET
+                                                    /api/trace shows the RT
+    F5    DELETE /api/upload during "sending"       failed/abort; the name is not in GET
+                                                    /api/clips afterwards
+    F6    a card whose listing is over 1 KB:        the command after each is still
+          #HLFC, #HLFT<NN>, console "mcu s"         answered right (no dropped or misread
+                                                    line); #HLFS err=none
+    F7    #HLFV3x, #HLFV02, #HLFPx, #HLFW10         ignored; #HLFV2, #HLFG1, #HLFT3 work
+    F8    POST /api/ota with a file over 960 KiB    400 "length", connection closed at once
+    F9    POST /api/upload ...&pre=575              400 "query"; pre=574 opens a session
+    F10   during #HLFE: console "mesh name X"       "[mesh] refused: ..."; the same line
+                                                    is saved once #HLFE has ended
+    F11   console "mcu" with a line over 95         "[mcu] refused ..."; nothing sent to
+          characters, or with four arguments        the MCU
+    F12   three power cycles of 2-10 s              maintenance mode, as before. Two
+                                                    cycles, console "mesh restart", 10 s,
+                                                    one more cycle: no maintenance mode
 
 ## Safety rules in the code
 

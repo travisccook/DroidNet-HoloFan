@@ -1,6 +1,7 @@
 // Decides whether a freshly OTA-updated image (bootloader state
 // PENDING_VERIFY) is kept or rolled back: it must reach
-// "mesh up" (and, on the fan, "MCU answered") within 30 s of boot.
+// "mesh up" (the adapter: a frame received from another node) within 30 s
+// of boot. "MCU answered" can be required too; neither node does today.
 // Pure C++; the adapter maps the verdict to esp_ota_mark_app_valid_cancel_
 // rollback() / esp_ota_mark_app_invalid_rollback_and_reboot().
 #ifndef VALIDITY_GATE_H
@@ -18,7 +19,8 @@ class ValidityGate {
   // pendingVerify: the running image is in PENDING_VERIFY.
   // meshRequired: false when the mesh is deliberately off (no password set),
   //   so an update to an unconfigured node is not rolled back for that.
-  // mcuRequired: true on the fan.
+  // mcuRequired: also wait for mcuOk() (unused: the fan passes false, so a
+  //   silent LED controller cannot roll back the update that fixes it).
   void begin(bool pendingVerify, bool meshRequired, bool mcuRequired, uint32_t now);
   void meshUp() { meshUp_ = true; }
   void mcuOk() { mcuOk_ = true; }

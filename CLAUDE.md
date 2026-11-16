@@ -59,7 +59,9 @@ same holds for their test suites.
   excludes v, u, w and y.
 - Never configure GPIO8 or GPIO9 (boot straps).
 - Never erase NVS, and never write outside the "hlmesh" namespace: NVS holds
-  the chip's RF calibration and the stock firmware's data. The flasher
+  the chip's RF calibration and the stock firmware's data. (One exception
+  this code does not control: ESP-IDF's PHY may rewrite its own "phy"
+  calibration entry; see sdkconfig.defaults.) The flasher
   never erases the flash; its first flash and app-only flash never write the
   nvs partition; only restore writes it, with the chip's own backed-up
   contents.

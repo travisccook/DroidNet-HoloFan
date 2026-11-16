@@ -141,7 +141,10 @@ Diagnostics (bench):
              "[mcu] mculog:...": what the MCU prints by itself (0.9.2)
     #HLFX<cmd> [args]   one raw line to the MCU; its reply comes back as an
              RTERM line ([TERM:16][mcu] ...). Over the mesh only read and
-             playback commands pass (never v, u, w or y)
+             playback commands pass (never v, u, w or y). 0.9.19 (not
+             yet tried on a fan): a ^ in the reply is shown as \x5e, and
+             a line that is too long or has a fourth argument gets
+             "[mcu] refused ..." instead of being cut short
     #HLFY<r><s>     bench test (HoloFan 0.9.4): volume 3 for s
              seconds (10-300) with the ESP's radio on (r=1), fully off
              (r=0: ESP-NOW and Wi-Fi stopped, no receive or transmit

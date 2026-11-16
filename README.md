@@ -85,6 +85,10 @@ passthrough (tools/holofan_uart_bridge).
 Not tested: any other model, any other USB-serial adapter, a fan without a
 WCB mesh. If you try one of these, you are the first.
 
+Firmware 0.9.19 has only been tested on a computer (the unit tests): it has
+not yet been built with ESP-IDF or run on a fan. What still has to be tried
+is listed in firmware/holofan/README.md, "0.9.19: not yet tried on a fan".
+
 ---
 
 ## You will need
@@ -317,7 +321,8 @@ makes clips and tools/bench/clip_put.py uploads one (tools/README.md).
 ## Day to day
 
 Send commands through any WCB as `;wHoloFan,<command>` or `;w16,<command>`.
-Commands are case-sensitive. Actions never reply; queries reply as a mesh
+Commands are case-sensitive, and since 0.9.19 a command must be the whole
+line (`#HLFV3x` is ignored). Actions never reply; queries reply as a mesh
 broadcast that every WCB writes to its broadcast-out ports. Send at most
 about three actions a second: the fan's controller needs time between them.
 
@@ -378,7 +383,9 @@ fan leaves the mesh, joins your Wi-Fi and answers at http://holofan.local:
          --data-binary @firmware/holofan/build/holofan.bin http://holofan.local/api/ota
 
 A new image must reach the mesh within 30 s of booting, or the fan goes back
-to the previous one by itself. Maintenance mode has no password: anyone on
+to the previous one by itself. Since 0.9.19 "reach" means it received a
+frame from another node of the mesh (a WCB sends a heartbeat about every
+10 s), so update with a WCB switched on and in range. Maintenance mode has no password: anyone on
 that network can upload while it is on. Details:
 [docs/MAINTENANCE_API.md](docs/MAINTENANCE_API.md).
 
@@ -419,6 +426,10 @@ Tests, none of which need hardware:
     python3 -B -m unittest discover -s firmware/holofan/tests
     python3 -B -m unittest discover -s tools/bench -p 'test_*.py'
     python3 -B -m unittest discover -s tools/holofan_clip -p 'test_*.py'
+    python3 -B -m unittest discover -s tools -p 'test_check_private.py'
+
+Run `sh tools/install_hooks.sh` once per clone: git then runs the
+private-data scan (tools/check_private.py) before every commit.
 
 ---
 

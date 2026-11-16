@@ -20,6 +20,14 @@ CONFIG_FREERTOS_HZ=1000
 # Never read or write Wi-Fi settings in NVS: the stock nvs.net80211
 # namespace stays untouched (never erase the stock fan's NVS namespaces).
 CONFIG_ESP_WIFI_NVS_ENABLED=n
+# Left at its default (y) on purpose: CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE.
+# ESP-IDF's PHY keeps its RF calibration in NVS namespace "phy" (cal_data,
+# cal_mac, cal_version) and rewrites it when the stored data is missing or
+# fails its check (esp_phy/src/phy_init.c, release/v5.4). That is the one
+# write outside "hlmesh"; this firmware never asks for it. Turning storage
+# off would mean a full calibration at every radio start (longer, and a
+# bigger current burst: not tried on a fan). The chip's original "phy" data
+# is in the wired backup and comes back with restore_stock.sh.
 
 # The app must fit an OTA slot: optimise for size.
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y

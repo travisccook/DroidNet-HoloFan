@@ -20,6 +20,9 @@ HoloFan only, without the mesh: power-cycle the fan three times in a row,
 each time on for 2-10 s (e.g. #HLF0 / #HLF1 on the HoloLifter's relay). The
 third boot enters maintenance on profile 1 (profile 2 if 1 is unset). Only
 power-on resets count, so brown-outs and software reboots never trigger it.
+Any boot that stays up for 10 s starts the count again (0.9.19: whatever its
+reset reason; before, only a power-on boot cleared it. Host-tested; not yet
+tried on a fan).
 The fan's UART0 console also takes "mesh maint <p>".
 
 HoloFan 0.9.12: the fan plays at volume 1 while it is in maintenance, where
@@ -39,7 +42,9 @@ commands sent to it are lost, and WCBs mark it offline after about 55 s.
 
 Commands sent to the node after #HLZX in the same burst are not run, and are
 dropped when the node leaves the mesh. On return to the mesh the HoloLifter
-re-enables its motor driver; if a move was commanded while it was away (for
+re-enables its motor driver, unless #HLOF or the console's "disable" had
+switched it off before (1.0.2; earlier versions always re-enabled it; not
+yet tried on a lift); if a move was commanded while it was away (for
 example a USB 'up'), the lift is stopped first, which, like any stop, also
 cuts the holofan relay. Wi-Fi auto-reconnect is switched off on return so
 the radio stays on the mesh channel.
@@ -54,6 +59,11 @@ The node returns to the mesh (3 boot announces, heartbeat, WDP adverts) on:
 - a power cycle.
 
 There is no idle timeout.
+
+The node rejoins with the mesh settings it booted with (changed ones still
+wait for a reboot). If the mesh radio does not start on return, the node
+tries again every 5 s; before HoloLifter 1.0.2 / HoloFan 0.9.19 it stayed
+off the mesh until a power cycle. (Not yet tried on a node.)
 
 ## Endpoints (port 80, no authentication)
 
@@ -134,6 +144,13 @@ There is no idle timeout.
     HoloFan only:
     GET    /api/clips
            200 [{"name":"02-Name.bin"}, ...]      every name on the SD card
+               that fits the fan's 4 KB listing buffer: about 100 names of
+               up to 38 characters (computed; untested with that many
+               clips). A longer listing is cut there, and an empty or
+               failed listing reads as 200 [] (no clips). DELETE and the
+               "exists" check of both uploads read the same listing: a
+               clip past the cut is 404 "notfound" for DELETE (force=1
+               still sends the delete) and is not seen as existing.
            503 {"ok":false,"err":"nomcu"|"busy"}
     PUT    /api/clips/<name>[?mhz=<10|20|40>&clk=<pll|xtal>]
            body: the clip bytes (Content-Length required; the fan pads to
@@ -169,6 +186,12 @@ There is no idle timeout.
            409 {"ok":false,"err":"upload"}     a resumable upload is running
            500 {"ok":false,"err":"cf"|"rf"|"sync"|"spi"|"recv"|"noverdict"|"nomem"|"flash","partial":<bool>}
                partial true: a half-written file may remain; DELETE it
+               noverdict: no RT / RF from the controller within 10 s of
+               the last frame. 0.9.19 also finds a verdict that arrived
+               together with the controller's output for the last frame,
+               which earlier versions could miss, and lets the controller
+               go quiet before it deletes a failed upload's partial file
+               (both host-tested; not yet tried on a fan).
            503 as GET, or {"ok":false,"err":"verify"}: a fresh firmware
                image is still proving itself (about 30 s after an OTA)
            Every PUT error closes the connection after the reply.
@@ -293,7 +316,8 @@ client reconnects. One session at a time.
                    window): buffered before the file is created and
                    sending starts. More than 574 is a 400 "query" since 0.9.19 (older
                    firmware took up to 617; 0.9.18 counted more than 574
-                   as 574).
+                   as 574). The refusal is host-tested; not yet tried on
+                   a fan.
              dry   1000..600000 ms (default 4000 for reserve, 30000 for
                    burst): the session fails
                    ("recv", body end 'd') when no frame has gone to the
@@ -415,14 +439,15 @@ itself only if, within 30 s, it reaches the mesh: it must receive a frame
 from another node of the mesh (a WCB sends a heartbeat about every 10 s), so
 update with a WCB switched on. Before HoloLifter 1.0.2 / HoloFan 0.9.19 a
 radio that had merely started counted, which kept an image that could not
-hear the mesh. (Host-tested; not yet tried on a node. The fan does not require
+hear the mesh. (The new rule is not yet tried on a node: an OTA with a WCB
+in range must be kept, one with no WCB in range must roll back. The fan does not require
 its LED/SD controller to answer: a silent controller must not block the
 update that fixes it.) Otherwise it rolls back to the previous image on its own.
 A node with no mesh password configured is not rolled back for that reason.
 
 An OTA error reply that leaves part of the body unread (400 length, 500
 from the write or the receive) closes the connection after the reply
-(HoloFan 0.9.19), as every clip PUT error does.
+(HoloFan 0.9.19; not yet tried on a fan), as every clip PUT error does.
 
 ## Security
 

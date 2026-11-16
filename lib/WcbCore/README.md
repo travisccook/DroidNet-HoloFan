@@ -44,6 +44,10 @@ and keep them identical.
 - Every node id is swept for offline (not only floor/learned peers).
 - A sender outside 1..20, or claiming our own id, is rejected.
 - An ACK frees a pending send only if it comes from that send's target.
-- Not ported: broadcast send, fragmentation (>187 chars), Maestro/Kyber/raw
+- The peek hook (setPeekHook) is called once per command: a sender's ETM
+  retry of a command already peeked does not call it again.
+- suspend() drops the commands still queued for popCommand().
+- Broadcast send is best effort (WcbNode::broadcast: never tracked or retried).
+- Not ported: fragmentation (>187 chars), Maestro/Kyber/raw
   serial, bulk transfer, stored sequences, neighbour decoding, learned peers
   in NVS, auto-join, delivery statistics, the Wizard management relay.

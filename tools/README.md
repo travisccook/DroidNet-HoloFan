@@ -37,7 +37,7 @@ Changing a WCB's settings is left to you, by hand.
                         are refused without --allow-unlisted, because the fan
                         never lists such a clip and only formatting the card
                         removes it (docs/HOW_IT_WORKS.md, section 4)
-                          make_test_clip.py <ee37-header.bin> <out.bin> [frames]
+                          make_test_clip.py <ee37-header.bin> <out.bin> [frames] [--allow-unlisted]
     pipeline_sim.cpp    offline simulation of the upload path (lib/FanLogic)
                           c++ -std=c++17 -O2 -I lib/FanLogic -I lib/HolofanProtocol \
                             tools/holofan_clip/pipeline_sim.cpp lib/FanLogic/*.cpp \
@@ -61,6 +61,9 @@ Changing a WCB's settings is left to you, by hand.
     ota_fan.sh          put the fan in maintenance mode through a WCB, then
                         POST a new app image, retrying
                           WCB_HOST=<pi> [FAN=<fan-ip>] tools/bench/ota_fan.sh [image]
+                        It warns when the command could not be sent, and
+                        stops with OTA-FAILED when the fan's /api/info does
+                        not answer within about a minute.
 
 ## Bench measurements (tools/bench)
 
@@ -81,6 +84,10 @@ Changing a WCB's settings is left to you, by hand.
                           silences.py RECORDING [--start HH:MM:SS]
     av_offset.py        audio/video offset from a phone video of the sync clip
                           av_offset.py VIDEO
+
+send.py exits with an error when a command could not be sent, and probe.py
+counts such commands; both go on with the rest. clip_put.py refuses --pre
+outside 20..574 and --chunk below 1 before it contacts the fan.
 
 meshlog.py and wcbwatch.py need the `websockets` package. silences.py needs
 ffmpeg (or afconvert on macOS); av_offset.py needs ffmpeg, numpy and scipy.

@@ -92,7 +92,10 @@ Timing matters. The MCU drops or misreads a line that arrives while it is
 still busy with the previous one (a get_setting sent 4 ms after a volume
 change once ran as "previous clip"). The firmware therefore waits until the
 MCU has been quiet for 300 ms (at most 3 s) after every action, which is why
-the mesh commands are queued and paced.
+the mesh commands are queued and paced. Since 0.9.19 it also waits (at most
+3 s more) after a clip listing that filled its buffer or was still being
+printed at the timeout, and before it deletes the partial file of a failed
+upload (host-tested; not yet tried on a fan).
 
 At every power-up the MCU starts at volume 3, Bluetooth on, loop all, and a
 clip upload resets it to the same state; after an upload the firmware puts
@@ -111,7 +114,10 @@ select on GPIO0 plus the manual one on GPIO10. An upload is:
    than one extra window be outstanding (the same handshake the stock
    firmware uses).
 3. The last window is padded with zeros to the full 28,800 bytes. The MCU
-   ends with `RT` (received) or `RF` (failed).
+   ends with `RT` (received) or `RF` (failed). The firmware waits 10 s for
+   it; 0.9.19 also looks for it in what the MCU printed right after the
+   last frame, where earlier versions could miss it (host-tested; not yet
+   tried on a fan).
 
 The MCU aborts a transfer when data stops for roughly 2.6 to 5 s. Wi-Fi from
 inside a droid can stall for longer, so the firmware never streams straight
@@ -172,12 +178,18 @@ the chip's own 2 MB backup back, and with it the NVS contents that backup
 holds. NVS holds the chip's RF calibration and the stock firmware's own
 data, which the stock firmware needs again if you ever restore it. This firmware keeps its settings in its
 own namespace, "hlmesh", and does not let the Wi-Fi driver store anything in
-NVS.
+NVS. One thing outside "hlmesh" can still change: ESP-IDF's radio library
+keeps its calibration under "phy" and rewrites that entry when what is
+stored is missing or fails its check (read in ESP-IDF's phy_init.c; whether
+it happens on this fan has not been checked). The wired backup holds the
+original, and restore_stock.sh puts it back.
 
 After the first flash every update is an OTA in maintenance mode. A new
 image boots in the bootloader's pending-verify state and keeps itself only
 if it reaches the mesh within 30 s; otherwise the bootloader goes back to the
-previous image on its own (tested).
+previous image on its own (tested up to 0.9.18, where a started radio
+counted as reaching the mesh). Since 0.9.19 the image must receive a frame
+from another node of the mesh; that rule is not yet tried on a fan.
 
 ## 7. Transmit power
 
