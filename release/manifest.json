@@ -1,9 +1,9 @@
 {
   "node": "HoloFan",
-  "version": "0.9.19",
-  "built_from_commit": "15713a9",
+  "version": "0.9.20",
+  "built_from_commit": "3c7af72",
   "toolchain": "firmware/holofan/build.sh (ESP-IDF 11edebdbbe, release/v5.4)",
-  "tested_on_hardware": false,
+  "tested_on_hardware": true,
   "ota_requires": "a WCB switched on and in range (the new image must receive a mesh frame within 30 s of booting, or it rolls back)",
   "ota": {
     "method": "POST",
@@ -13,8 +13,8 @@
   "files": {
     "ota": {
       "file": "holofan.bin",
-      "size": 832016,
-      "sha256": "65051edacb56184d29bcd5d7673388b6269469646354d6254cb7a2a9781655e1"
+      "size": 832032,
+      "sha256": "bb0a883691900b4e287333339a59691dfe4efdee910ea70ebfdb985011d4cda9"
     }
   }
 }

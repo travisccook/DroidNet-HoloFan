@@ -1,7 +1,8 @@
 # HoloFan firmware release
 
-Version 0.9.19, built from commit 15713a9 with firmware/holofan/build.sh (ESP-IDF 11edebdbbe, release/v5.4).
-Not yet run on hardware (manifest.json: tested_on_hardware false).
+Version 0.9.20, built from commit 3c7af72 with firmware/holofan/build.sh (ESP-IDF 11edebdbbe, release/v5.4).
+Run on a fan (2026-11-25) from a build of the same code; this file is a
+rebuild, so its SHA-256 differs (the image records its build time).
 
     manifest.json    version, commit, and each file's name, size and SHA-256
     holofan.bin      the application image: the one to send over Wi-Fi
