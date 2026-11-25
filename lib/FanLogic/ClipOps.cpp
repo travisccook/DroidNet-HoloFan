@@ -164,17 +164,24 @@ ClipErr deleteClip(McuLink& link, const char* name, char* scratch, size_t scratc
   return ClipErr::STILL;
 }
 
-// After a failed upload: "u <name>", then list. True if the file may still
-// be there (still listed, or the MCU gave no list at all).
+// After a failed upload: "u <name>", then list, up to CLEANUP_TRIES times
+// while the clip is still listed. True if the file may still be there (still
+// listed, or the MCU gave no list at all).
 static bool cleanup(McuLink& link, const char* name, char* scratch, size_t scratchSize) {
   char line[MCU_LINE_MAX];
   if (!deleteLine(name, line, sizeof(line))) return true;
-  // The upload may have stopped mid-transfer (sync, SPI, body) with the MCU
-  // still busy: let it go quiet first, or it drops the delete.
-  link.collect(nullptr, 0, SETTLE_QUIET_MS, SETTLE_MAX_MS);
-  link.expect(line, nullptr, 0, DELETE_READ_MS);   // settle: the MCU never ACKs `u`
-  int n = listClips(link, scratch, scratchSize);
-  return n <= 0 || listHas(scratch, name);
+  for (int i = 0; i < CLEANUP_TRIES; i++) {
+    // The upload may have stopped mid-transfer (sync, SPI, body) with the
+    // MCU still busy: let it go quiet first, or it drops the delete. Quiet
+    // is not enough after a whole (zero-padded) transfer: 0.5 s after RT
+    // the MCU was still finishing the file and dropped the `u` (bench
+    // 2026-11-25), hence the retry.
+    link.collect(nullptr, 0, SETTLE_QUIET_MS, SETTLE_MAX_MS);
+    link.expect(line, nullptr, 0, DELETE_READ_MS);   // settle: the MCU never ACKs `u`
+    int n = listClips(link, scratch, scratchSize);
+    if (n > 0 && !listHas(scratch, name)) return false;
+  }
+  return true;
 }
 
 PutSource::PutSource(BodyReader& body, FrameRing& ring, Clock& clock, size_t size, uint8_t* asmBuf)

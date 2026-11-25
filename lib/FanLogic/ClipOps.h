@@ -29,6 +29,9 @@ constexpr uint32_t VERDICT_CUT_QUIET_MS = 20;
 constexpr uint32_t VERDICT_CUT_MAX_MS = 100;
 constexpr uint32_t DELETE_READ_MS = 3000;                         // `u` is never ACKed
 constexpr int      DELETE_LIST_TRIES = 3;                         // listings that may confirm a delete
+// `u` after a failed upload, while the clip is still listed: the MCU drops
+// one sent while it is still finishing the file (bench 2026-11-25).
+constexpr int      CLEANUP_TRIES = 3;
 // The MCU drops input while it is busy (bench trace 2026-10-06): after a
 // pause and after CT, wait until it has been quiet this long (at most
 // SETTLE_MAX_MS) before sending more.

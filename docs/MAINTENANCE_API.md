@@ -376,7 +376,14 @@ client reconnects. One session at a time.
            until the next POST or a reboot ("none").
     DELETE /api/upload[?id=<n>]
            Abort. 200 {"ok":true,"state":".."}; the session then ends as
-           failed/abort and the partial file is deleted.
+           failed/abort and the partial file is deleted. The fan still
+           sends the controller the rest of the declared size (zeros), so
+           the controller ends the transfer, then deletes the file. On a
+           fan (0.9.19, 2026-11-25) the controller dropped that delete,
+           sent 0.5 s after its RT, and the file stayed (partial true);
+           0.9.20 sends the delete again, up to 3 times, while the file is
+           still listed (on a fan 2026-11-25: the first delete was
+           dropped again, the second took; twice).
            400 {"ok":false,"err":"query"}   an id that is not 1..2147483647,
                a repeated id, any other key, or an empty pair
            404 {"ok":false,"err":"id"}

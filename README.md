@@ -85,9 +85,10 @@ passthrough (tools/holofan_uart_bridge).
 Not tested: any other model, any other USB-serial adapter, a fan without a
 WCB mesh. If you try one of these, you are the first.
 
-Firmware 0.9.19 has only been tested on a computer (the unit tests): it has
-not yet been built with ESP-IDF or run on a fan. What still has to be tried
-is listed in firmware/holofan/README.md, "0.9.19: not yet tried on a fan".
+Firmware 0.9.20 has run on a fan: F1, F3-F9 and F12 of the list in
+firmware/holofan/README.md ("0.9.19: not yet tried on a fan") pass; F2, F10,
+F11 and the console half of F12 are still untried, and F6 only with a
+listing under 1 KB.
 
 ---
 

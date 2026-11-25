@@ -126,6 +126,10 @@ the code is meant to do, not a result. Start with ./build.sh.
                                                     /api/trace shows the RT
     F5    DELETE /api/upload during "sending"       failed/abort; the name is not in GET
                                                     /api/clips afterwards
+                                                    0.9.19 on a fan: FAILED twice, the
+                                                    controller dropped the `u` sent 0.5 s
+                                                    after RT; 0.9.20 retries it: PASS
+                                                    twice (the second `u` took)
     F6    a card whose listing is over 1 KB:        the command after each is still
           #HLFC, #HLFT<NN>, console "mcu s"         answered right (no dropped or misread
                                                     line); #HLFS err=none

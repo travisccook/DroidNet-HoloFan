@@ -505,6 +505,35 @@ void test_upload_body_fails_midstream_pads_zeros() {
   TEST_ASSERT_EQUAL(1, l.count("u 99-Test.bin\n"));
 }
 
+// Bench 2026-11-25 (0.9.19, DELETE /api/upload mid-send): the zero-padded
+// transfer ended in RT, the `u` went out 0.5 s later, and the MCU, still
+// finishing the file, dropped it (no "mculog:del file.") and printed a
+// listing that still had the clip. cleanup() sends `u` again while the
+// clip is listed.
+void test_upload_cleanup_retries_a_dropped_delete() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {"", "02-Name.bin\n99-Test.bin\n", "02-Name.bin\n"};
+  l.expects = {0, 0};
+  b.data = pattern(SPI_FRAME * 200);
+  b.failAfter = SPI_FRAME * 150;
+  UploadResult r = up(l, s, b, "99-Test.bin", b.data.size(), RING_BLOCK);
+  TEST_ASSERT_EQUAL(ClipErr::RECV, r.err);
+  TEST_ASSERT_FALSE(r.partial);
+  TEST_ASSERT_EQUAL(2, l.count("u 99-Test.bin\n"));
+}
+
+// A clip that stays listed: `u` is tried CLEANUP_TRIES times, then partial.
+void test_upload_cleanup_gives_up_after_tries() {
+  FakeLink l; FakeSpi s; FakeBody b;
+  l.lists = {"", "99-Test.bin\n"};
+  l.expects = {0, 0};
+  b.data = pattern(SPI_FRAME * 200);
+  b.failAfter = SPI_FRAME * 150;
+  UploadResult r = up(l, s, b, "99-Test.bin", b.data.size(), RING_BLOCK);
+  TEST_ASSERT_TRUE(r.partial);
+  TEST_ASSERT_EQUAL(CLEANUP_TRIES, l.count("u 99-Test.bin\n"));
+}
+
 void test_delete_waits_full_settle_time() {
   FakeLink l;
   l.lists = {"99-Test.bin\n", ""};
@@ -886,7 +915,7 @@ void test_upload_trickles_through_a_long_stall() {
 // A stall longer than BODY_STALL_MS is a failed body: zeros, RECV, cleanup.
 void test_upload_body_stall_too_long_fails() {
   FakeLink l; FakeSpi s; FakeBody b;
-  l.lists = {"", ""};
+  l.lists = {"", "02-Name.bin\n"};
   l.expects = {0, 0};
   b.data = pattern(SPI_FRAME * 300);
   b.stallAt = SPI_FRAME * 200;
@@ -1549,6 +1578,8 @@ int main(int, char**) {
   RUN_TEST(test_upload_spi_failure);
   RUN_TEST(test_upload_body_fails_during_prefill_creates_nothing);
   RUN_TEST(test_upload_body_fails_midstream_pads_zeros);
+  RUN_TEST(test_upload_cleanup_retries_a_dropped_delete);
+  RUN_TEST(test_upload_cleanup_gives_up_after_tries);
   RUN_TEST(test_delete_waits_full_settle_time);
   RUN_TEST(test_upload_cleanup_waits_full_settle_time);
   RUN_TEST(test_decode_clip_path);
